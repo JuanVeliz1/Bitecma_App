@@ -221,7 +221,7 @@ fun EvadirScreen(navController: NavController, opId: String) {
                         TableCell("UNIDAD", weight = 0.8f)
                     }
 
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(modifier = Modifier.heightIn(max = 2000.dp)) {
                         items(evadirRows) { row ->
                             Row(
                                 modifier = Modifier

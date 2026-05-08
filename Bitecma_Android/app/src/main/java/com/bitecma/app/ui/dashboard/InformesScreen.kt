@@ -43,7 +43,7 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
     var error by remember { mutableStateOf<String?>(null) }
 
     val opIds = remember(DataManager.operacionesBd.size, DataManager.operacionesLc.size) {
-        (DataManager.operacionesBd.map { it.id } + DataManager.operacionesLc.map { it.id }).distinct()
+        (DataManager.operacionesBd.mapNotNull { it.id } + DataManager.operacionesLc.mapNotNull { it.id }).distinct()
     }
 
     var pendingSaveName by remember { mutableStateOf<String?>(null) }
@@ -236,7 +236,7 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
                 return@Column
             }
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(modifier = Modifier.weight(1f)) {
                 items(files) { f ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
