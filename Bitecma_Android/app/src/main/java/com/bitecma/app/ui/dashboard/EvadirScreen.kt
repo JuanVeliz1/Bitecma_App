@@ -32,7 +32,7 @@ import com.bitecma.app.network.RetrofitClient
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EvadirScreen(navController: NavController, opId: String) {
-    val scrollState = rememberScrollState()
+    val horizontalScrollState = rememberScrollState()
 
     val ctx = LocalContext.current
     var op by remember { mutableStateOf<OperacionDto?>(null) }
@@ -128,7 +128,14 @@ fun EvadirScreen(navController: NavController, opId: String) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Previsualización EVADIR", color = Color.White) },
+                title = { 
+                    Text(
+                        "Previsualización EVADIR", 
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    ) 
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
@@ -172,73 +179,94 @@ fun EvadirScreen(navController: NavController, opId: String) {
                 .fillMaxSize()
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
-                .padding(16.dp)
         ) {
-            Text("Operación: $opId", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("Resumen de capturas para exportación a plataforma SERNAPESCA", color = Color.Gray, fontSize = 12.sp)
-            
-            Spacer(modifier = Modifier.height(16.dp))
+            // Header Info
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFFE0F2F1),
+                shadowElevation = 2.dp
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Operación: $opId",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 20.sp,
+                        color = Color(0xFF004D40)
+                    )
+                    Text(
+                        text = "Resumen de capturas para exportación a plataforma SERNAPESCA",
+                        color = Color(0xFF00796B),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = Color(0xFF00897B))
                 }
                 return@Column
             }
 
             if (error != null) {
-                Text(error ?: "", color = Color.Red, fontSize = 12.sp)
+                Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text(error ?: "Error desconocido", color = Color.Red, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
                 return@Column
             }
 
-            if (op == null) {
-                Text("Sin datos", color = Color.Gray, fontSize = 12.sp)
+            if (op == null || evadirRows.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Sin datos disponibles", color = Color.Gray, fontSize = 14.sp)
+                }
                 return@Column
             }
 
-            if (evadirRows.isEmpty()) {
-                Text("Sin registros EVADIR para esta operación", color = Color.Gray, fontSize = 12.sp)
-                return@Column
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .horizontalScroll(scrollState)
-            ) {
-                Column(modifier = Modifier.width(600.dp)) {
+            // Table Content with Responsive Horizontal Scroll
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header Row (Fixed)
+                Box(modifier = Modifier.horizontalScroll(horizontalScrollState)) {
                     Row(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF003366), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                            .padding(12.dp)
+                            .width(1200.dp) // Minimum width for the table to avoid squishing
+                            .background(Color(0xFF003366))
+                            .padding(vertical = 12.dp, horizontal = 8.dp)
                     ) {
-                        TableCell("ITEM", weight = 0.5f)
-                        TableCell("FECHA", weight = 1.2f)
-                        TableCell("BOTE", weight = 1.5f)
-                        TableCell("ESPECIE", weight = 1.2f)
-                        TableCell("CANTIDAD", weight = 1f)
-                        TableCell("UNIDAD", weight = 0.8f)
+                        TableCell("ITEM", weight = 0.5f, isHeader = true)
+                        TableCell("BOTE", weight = 1.2f, isHeader = true)
+                        TableCell("FECHA", weight = 1.0f, isHeader = true)
+                        TableCell("ESPECIE", weight = 1.2f, isHeader = true)
+                        TableCell("CANT", weight = 0.7f, isHeader = true)
+                        TableCell("UNID", weight = 0.5f, isHeader = true)
+                        Spacer(modifier = Modifier.weight(1.0f))
                     }
+                }
 
-                    LazyColumn(modifier = Modifier.heightIn(max = 2000.dp)) {
-                        items(evadirRows) { row ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 4.dp)
-                                    .background(Color.White)
-                                    .padding(vertical = 12.dp)
-                            ) {
-                                TableCell(row["ITEM"] ?: "", weight = 0.5f, isContent = true)
-                                TableCell(row["FECHA"] ?: "", weight = 1.2f, isContent = true)
-                                TableCell(row["BOTE"] ?: "", weight = 1.5f, isContent = true)
-                                TableCell(row["ESPECIE"] ?: "", weight = 1.2f, isContent = true)
-                                TableCell(row["CANT"] ?: "", weight = 1f, isContent = true)
-                                TableCell(row["UNID"] ?: "", weight = 0.8f, isContent = true)
-                            }
-                            HorizontalDivider(color = Color(0xFFEEEEEE))
+                // Data Rows (Scrollable)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .horizontalScroll(horizontalScrollState)
+                ) {
+                    items(evadirRows) { row ->
+                        Row(
+                            modifier = Modifier
+                                .width(1200.dp) // Increased width for OP-2026-004 style
+                                .background(Color.White)
+                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TableCell(row["ITEM"] ?: "", weight = 0.5f)
+                            TableCell(row["BOTE"] ?: "", weight = 1.2f, fontWeight = FontWeight.Bold)
+                            TableCell(row["FECHA"] ?: "", weight = 1.0f)
+                            TableCell(row["ESPECIE"] ?: "", weight = 1.2f, color = Color(0xFF0D47A1))
+                            TableCell(row["CANT"] ?: "", weight = 0.7f, fontWeight = FontWeight.Bold)
+                            TableCell(row["UNID"] ?: "", weight = 0.5f)
+                            // Additional space for other columns if needed
+                            Spacer(modifier = Modifier.weight(1.0f))
                         }
+                        HorizontalDivider(modifier = Modifier.width(1200.dp), color = Color(0xFFEEEEEE), thickness = 1.dp)
                     }
                 }
             }
@@ -247,12 +275,21 @@ fun EvadirScreen(navController: NavController, opId: String) {
 }
 
 @Composable
-fun RowScope.TableCell(text: String, weight: Float, isContent: Boolean = false) {
+fun RowScope.TableCell(
+    text: String, 
+    weight: Float, 
+    isHeader: Boolean = false,
+    fontWeight: FontWeight = FontWeight.Normal,
+    color: Color = if (isHeader) Color.White else Color.Black
+) {
     Text(
         text = text,
-        modifier = Modifier.weight(weight).padding(horizontal = 8.dp),
-        fontSize = if (isContent) 11.sp else 10.sp,
-        fontWeight = if (isContent) FontWeight.Normal else FontWeight.Bold,
-        color = if (isContent) Color.Black else Color.White
+        modifier = Modifier
+            .weight(weight)
+            .padding(horizontal = 4.dp),
+        fontSize = if (isHeader) 12.sp else 13.sp,
+        fontWeight = if (isHeader) FontWeight.Bold else fontWeight,
+        color = color,
+        maxLines = 1
     )
 }
