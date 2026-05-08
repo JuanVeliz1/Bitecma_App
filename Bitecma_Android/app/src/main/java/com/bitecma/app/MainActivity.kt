@@ -18,7 +18,6 @@ import com.bitecma.app.ui.login.ForgotPasswordScreen
 import com.bitecma.app.ui.dashboard.OperacionesScreen
 import com.bitecma.app.ui.dashboard.BotesScreen
 import com.bitecma.app.ui.dashboard.EspeciesScreen
-import com.bitecma.app.ui.dashboard.EvadirScreen
 import com.bitecma.app.ui.dashboard.DocumentosScreen
 import com.bitecma.app.ui.dashboard.IngresosScreen
 import com.bitecma.app.data.AppState
@@ -91,10 +90,6 @@ class MainActivity : ComponentActivity() {
                         composable("admin/{userId}") { backStackEntry ->
                             val userId = backStackEntry.arguments?.getString("userId")?.toIntOrNull() ?: 0
                             AdminScreen(navController, userId)
-                        }
-                        composable("evadir/{opId}") { backStackEntry ->
-                            val opId = backStackEntry.arguments?.getString("opId") ?: ""
-                            EvadirScreen(navController, opId)
                         }
                     }
                 }

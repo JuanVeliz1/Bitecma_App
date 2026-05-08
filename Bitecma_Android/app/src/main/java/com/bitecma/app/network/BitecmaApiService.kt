@@ -67,6 +67,24 @@ data class EspecieDto(
     val activo: Boolean? = null
 )
 
+data class SectorAmerbDto(
+    val id: Int,
+    val nombre: String,
+    val region: Int? = null
+)
+
+data class CaletaDto(
+    val id: Int? = null,
+    val nombre: String,
+    val region: Int? = null
+)
+
+data class OpaDto(
+    val id: Int,
+    val nombre: String,
+    val region: Int? = null
+)
+
 interface BitecmaApiService {
     @GET("ping")
     suspend fun ping(): Response<PingResponse>
@@ -80,6 +98,9 @@ interface BitecmaApiService {
     @POST("operaciones")
     suspend fun crearOperacion(@Body operacion: OperacionUpsertRequest): Response<ApiEnvelope<OperacionDto>>
 
+    @retrofit2.http.DELETE("operaciones/{id}")
+    suspend fun eliminarOperacion(@Path("id") id: String): Response<ApiEnvelope<Boolean>>
+
     @POST("auth/login")
     suspend fun login(@Body request: AuthLoginRequest): Response<AuthLoginResponse>
 
@@ -91,6 +112,15 @@ interface BitecmaApiService {
 
     @GET("especies")
     suspend fun getEspecies(): Response<ApiEnvelope<List<EspecieDto>>>
+
+    @GET("sectores-amerb")
+    suspend fun getSectoresAmerb(): Response<ApiEnvelope<List<SectorAmerbDto>>>
+
+    @GET("caletas")
+    suspend fun getCaletas(): Response<ApiEnvelope<List<CaletaDto>>>
+
+    @GET("opas")
+    suspend fun getOpas(): Response<ApiEnvelope<List<OpaDto>>>
 
     @GET("files")
     suspend fun getFiles(@Query("opId") opId: String? = null): Response<ApiEnvelope<List<FileMetaDto>>>
@@ -161,7 +191,8 @@ data class OperacionUpsertRequest(
     val org: String? = null,
     val numSeg: Int? = null,
     val fechaInicio: String? = null,
-    val fechaFin: String? = null
+    val fechaFin: String? = null,
+    val botes: List<OperacionBoteDto>? = null
 )
 
 data class FileMetaDto(

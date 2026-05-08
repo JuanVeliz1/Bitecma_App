@@ -25,15 +25,27 @@ import com.bitecma.app.network.RetrofitClient
 @Composable
 fun BotesScreen(navController: NavController, userId: Int) {
     var searchQuery by remember { mutableStateOf("") }
-    var regiones by remember { mutableStateOf(listOf("I — Tarapacá")) }
+    val regionesLabels = listOf(
+        "I — Tarapacá", "II — Antofagasta", "III — Atacama", "IV — Coquimbo", 
+        "V — Valparaíso", "VI — O'Higgins", "VII — Maule", "VIII — Biobío",
+        "IX — La Araucanía", "X — Los Lagos", "XI — Aysén", "XII — Magallanes",
+        "XIV — Los Ríos", "XV — Arica y Parinacota", "XVI — Ñuble"
+    )
+    
     var selectedRegion by remember { mutableStateOf("I — Tarapacá") }
     var selectedBote by remember { mutableStateOf<BoteMaestro?>(null) }
     
     var botesData by remember { mutableStateOf<List<BoteMaestro>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(isLoading) {
+        if (!isLoading) return@LaunchedEffect
+        
+        // Cargar datos locales primero
         botesData = DataManager.botes
+        
         try {
+            // 1. Obtener Regiones para mapeo dinámico
             val regRes = RetrofitClient.apiService.getRegiones()
             val romToLabel = if (regRes.isSuccessful && regRes.body()?.ok == true) {
                 (regRes.body()?.data ?: emptyList()).associate { r ->
@@ -44,29 +56,37 @@ fun BotesScreen(navController: NavController, userId: Int) {
                 emptyMap()
             }
 
-            if (romToLabel.isNotEmpty()) {
-                regiones = romToLabel.values.toList()
-                if (!regiones.contains(selectedRegion)) selectedRegion = regiones.first()
-            }
-
+            // 2. Obtener Botes desde la API/Base de Datos
             val bRes = RetrofitClient.apiService.getBotes()
             if (bRes.isSuccessful && bRes.body()?.ok == true) {
                 val items = bRes.body()?.data ?: emptyList()
                 val mapped = items.mapNotNull { b ->
                     val rom = b.region_rom ?: b.region
-                    val regionLabel = if (rom != null) romToLabel[rom] ?: rom else ""
+                    // Mapear el rom de la API al label que usamos en el sidebar
+                    val regionLabel = if (rom != null) {
+                        romToLabel[rom] ?: regionesLabels.find { it.startsWith("$rom —") || it == rom } ?: rom
+                    } else ""
+                    
                     val nombre = b.nombre ?: return@mapNotNull null
                     BoteMaestro(
                         nombre = nombre,
-                        caleta = b.caleta ?: "",
-                        rpa = b.nrpa ?: "",
-                        matricula = b.nmatricula ?: "",
+                        caleta = b.caleta ?: "S/I",
+                        rpa = b.nrpa ?: "S/I",
+                        matricula = b.nmatricula ?: "S/I",
                         regionId = regionLabel
                     )
                 }
-                botesData = mapped
+                // Combinar locales únicos con los de la API (evitar duplicados por nombre)
+                val combined = (mapped + DataManager.botes).distinctBy { it.nombre.uppercase() }
+                botesData = combined
+                
+                // Actualizar DataManager para que OperacionesScreen también vea los nuevos botes
+                DataManager.botes.clear()
+                DataManager.botes.addAll(combined)
             }
         } catch (_: Exception) {
+        } finally {
+            isLoading = false
         }
     }
 
@@ -106,6 +126,15 @@ fun BotesScreen(navController: NavController, userId: Int) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
                     }
                 },
+                actions = {
+                    IconButton(onClick = { 
+                        // Forzar refresco
+                        isLoading = true
+                        searchQuery = "" // Limpiar búsqueda al refrescar
+                    }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refrescar", tint = Color.White)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
             )
         }
@@ -120,7 +149,7 @@ fun BotesScreen(navController: NavController, userId: Int) {
                     .padding(8.dp)
             ) {
                 LazyColumn {
-                    items(regiones) { region ->
+                    items(regionesLabels) { region ->
                         val isSelected = region == selectedRegion
                         Surface(
                             modifier = Modifier

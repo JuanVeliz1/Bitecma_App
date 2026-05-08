@@ -72,6 +72,7 @@ fun DashboardScreen(
         try {
             val especiesRes = RetrofitClient.apiService.getEspecies()
             if (especiesRes.isSuccessful) {
+                AppState.isOnline = true
                 val body = especiesRes.body()
                 if (body?.ok == true && body.data != null) {
                     DataManager.especies.clear()
@@ -81,17 +82,23 @@ fun DashboardScreen(
                         }
                     )
                 }
+            } else {
+                AppState.isOnline = false
             }
 
             val opsRes = RetrofitClient.apiService.getOperaciones()
             if (opsRes.isSuccessful) {
+                AppState.isOnline = true
                 val body = opsRes.body()
                 if (body?.ok == true) {
                     DataManager.operacionesBd.clear()
                     DataManager.operacionesBd.addAll(body.data ?: emptyList())
                 }
+            } else {
+                AppState.isOnline = false
             }
         } catch (_: Exception) {
+            AppState.isOnline = false
         }
     }
 
@@ -260,7 +267,7 @@ fun DashboardScreen(
             ) {
                 item {
                     Text("Dashboard", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("Resumen operacional · EVADIR importados", color = Color.Gray, fontSize = 14.sp)
+                    Text("Resumen operacional · Exportación XLSX", color = Color.Gray, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 

@@ -28,6 +28,8 @@ import androidx.navigation.NavController
 import androidx.core.content.ContextCompat
 import com.bitecma.app.data.DataManager
 import com.bitecma.app.network.FileMetaDto
+import com.bitecma.app.utils.ExcelExporter
+import com.bitecma.app.network.OperacionDto
 import com.bitecma.app.network.RetrofitClient
 import com.bitecma.app.network.UploadTextFileRequest
 import kotlinx.coroutines.launch
@@ -48,6 +50,7 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
 
     var pendingSaveName by remember { mutableStateOf<String?>(null) }
     var pendingSaveText by remember { mutableStateOf<String?>(null) }
+    var pendingSaveBytes by remember { mutableStateOf<ByteArray?>(null) }
 
     var pendingPermissionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -70,17 +73,36 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
 
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         val name = pendingSaveName
-        val text = pendingSaveText
-        if (uri != null && name != null && text != null) {
+        if (uri != null && name != null) {
             try {
                 ctx.contentResolver.openOutputStream(uri)?.use { os ->
-                    os.write(text.toByteArray(Charsets.UTF_8))
+                    if (pendingSaveBytes != null) {
+                        os.write(pendingSaveBytes)
+                    } else if (pendingSaveText != null) {
+                        os.write(pendingSaveText!!.toByteArray(Charsets.UTF_8))
+                    }
                 }
             } catch (_: Exception) {
             }
         }
         pendingSaveName = null
         pendingSaveText = null
+        pendingSaveBytes = null
+    }
+
+    val saveXlsxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
+        val name = pendingSaveName
+        val bytes = pendingSaveBytes
+        if (uri != null && name != null && bytes != null) {
+            try {
+                ctx.contentResolver.openOutputStream(uri)?.use { os ->
+                    os.write(bytes)
+                }
+            } catch (_: Exception) {
+            }
+        }
+        pendingSaveName = null
+        pendingSaveBytes = null
     }
 
     val pickTextLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -199,10 +221,44 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
 
             Button(
                 onClick = {
+                    val opId = selectedOpId ?: return@Button
+                    val op = (DataManager.operacionesBd + DataManager.operacionesLc).find { it.id == opId }
+                    if (op != null) {
+                        scope.launch {
+                            isLoading = true
+                            try {
+                                val bytes = ExcelExporter.generateOperacionExcel(op)
+                                pendingSaveName = "Reporte_${op.id}.xlsx"
+                                pendingSaveBytes = bytes
+                                saveXlsxLauncher.launch(pendingSaveName!!)
+                            } catch (e: Exception) {
+                                error = "Error al generar Excel: ${e.message}"
+                            } finally {
+                                isLoading = false
+                            }
+                        }
+                    } else {
+                        error = "Operación no encontrada localmente"
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading && selectedOpId != null,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+            ) {
+                Icon(Icons.Default.Download, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Generar reporte .xlsx")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = {
                     pickTextLauncher.launch(arrayOf("text/plain"))
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isLoading
+                enabled = !isLoading,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF003366))
             ) {
                 Icon(Icons.Default.UploadFile, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
