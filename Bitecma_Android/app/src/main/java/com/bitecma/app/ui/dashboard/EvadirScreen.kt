@@ -201,10 +201,15 @@ fun EvadirScreen(navController: NavController, opId: String) {
                 return@Column
             }
 
-            Box(modifier = Modifier.fillMaxSize().horizontalScroll(scrollState)) {
-                Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .horizontalScroll(scrollState)
+            ) {
+                Column(modifier = Modifier.width(600.dp)) {
                     Row(
                         modifier = Modifier
+                            .fillMaxWidth()
                             .background(Color(0xFF003366), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
                             .padding(12.dp)
                     ) {
@@ -220,6 +225,7 @@ fun EvadirScreen(navController: NavController, opId: String) {
                         items(evadirRows) { row ->
                             Row(
                                 modifier = Modifier
+                                    .fillMaxWidth()
                                     .padding(horizontal = 4.dp)
                                     .background(Color.White)
                                     .padding(vertical = 12.dp)
@@ -231,7 +237,7 @@ fun EvadirScreen(navController: NavController, opId: String) {
                                 TableCell(row["CANT"] ?: "", weight = 1f, isContent = true)
                                 TableCell(row["UNID"] ?: "", weight = 0.8f, isContent = true)
                             }
-                            Divider(color = Color(0xFFEEEEEE))
+                            HorizontalDivider(color = Color(0xFFEEEEEE))
                         }
                     }
                 }

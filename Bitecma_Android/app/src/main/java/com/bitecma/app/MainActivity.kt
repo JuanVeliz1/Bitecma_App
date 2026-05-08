@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppState.loadSession(this)
-        val startDestination = if ((AppState.currentUserId ?: 0) > 0) {
+        val startDestination = if (AppState.currentUserId != null) {
             "dashboard/${AppState.currentUserId}"
         } else {
             "login"

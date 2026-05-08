@@ -38,11 +38,17 @@ fun LoginScreen(navController: NavController) {
     var successMessage by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     
-    // Check if the user is a known user to show "Bienvenido de nuevo"
-    val foundUser = PerfilesData.perfiles.find { it.correo.equals(email.trim(), ignoreCase = true) }
-    val lastLoginText = remember(email) {
-        AppState.getLastLoginText(ctx, email.trim())
+    // Check if the user is a known user or has a last login record
+    val trimmedEmail = email.trim()
+    val foundUser = PerfilesData.perfiles.find { it.correo.equals(trimmedEmail, ignoreCase = true) }
+    val lastLoginText = remember(trimmedEmail) {
+        if (trimmedEmail.isEmpty()) null else AppState.getLastLoginText(ctx, trimmedEmail)
     }
+    
+    // Show "Bienvenido de nuevo" if it's a known domain or we have a last login record
+    val isKnownDomain = trimmedEmail.contains("@bitecma.cl", ignoreCase = true) || 
+                        trimmedEmail.contains("@usuario.cl", ignoreCase = true)
+    val shouldShowWelcome = foundUser != null || (lastLoginText != null && isKnownDomain)
 
     Column(
         modifier = Modifier
@@ -75,10 +81,10 @@ fun LoginScreen(navController: NavController) {
                 Text(text = "Iniciar sesión", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                if (foundUser != null) {
-                    val namePart = foundUser.correo.substringBefore("@")
+                if (shouldShowWelcome) {
+                    val displayName = foundUser?.nombre ?: trimmedEmail.substringBefore("@")
                     Text(
-                        text = "Bienvenido de nuevo, $namePart",
+                        text = "Bienvenido de nuevo, $displayName",
                         color = Color(0xFF006600),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium

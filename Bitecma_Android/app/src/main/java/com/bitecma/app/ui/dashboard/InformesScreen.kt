@@ -199,9 +199,7 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
 
             Button(
                 onClick = {
-                    runWithPermission(Manifest.permission.READ_EXTERNAL_STORAGE) {
-                        pickTextLauncher.launch(arrayOf("text/plain"))
-                    }
+                    pickTextLauncher.launch(arrayOf("text/plain"))
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isLoading
