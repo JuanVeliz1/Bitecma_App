@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.compose.ui.text.style.TextAlign
-import com.bitecma.app.data.PerfilesData
 import com.bitecma.app.data.DataManager
 import com.bitecma.app.data.AppState
 import com.bitecma.app.data.EspecieMaestra
@@ -56,7 +55,6 @@ fun DashboardScreen(
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    val user = PerfilesData.perfiles.find { it.id == userId }
     var docExpanded by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     
@@ -117,7 +115,7 @@ fun DashboardScreen(
                     modifier = Modifier.padding(16.dp), 
                     color = if (isDarkMode) Color.White else Color(0xFF003366)
                 )
-                Divider()
+                HorizontalDivider()
                 
                 NavigationDrawerItem(
                     label = { Text("Dashboard") },
@@ -146,36 +144,6 @@ fun DashboardScreen(
                     onClick = { scope.launch { drawerState.close() }; navController.navigate("botes/$userId") },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 )
-
-                NavigationDrawerItem(
-                    label = {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            Text("Documentación", modifier = Modifier.weight(1f))
-                            Icon(
-                                if (docExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                contentDescription = null
-                            )
-                        }
-                    },
-                    selected = false,
-                    onClick = { docExpanded = !docExpanded },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                )
-
-                if (docExpanded) {
-                    NavigationDrawerItem(
-                        label = { Text("Documentos") },
-                        selected = false,
-                        onClick = { scope.launch { drawerState.close() }; navController.navigate("documentos/$userId") },
-                        modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 4.dp, bottom = 4.dp)
-                    )
-                    NavigationDrawerItem(
-                        label = { Text("Ingresos") },
-                        selected = false,
-                        onClick = { scope.launch { drawerState.close() }; navController.navigate("ingresos/$userId") },
-                        modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 4.dp, bottom = 4.dp)
-                    )
-                }
 
                 Spacer(modifier = Modifier.weight(1f))
                 
@@ -228,8 +196,7 @@ fun DashboardScreen(
                     },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 )
-
-                Divider()
+                HorizontalDivider()
                 NavigationDrawerItem(
                     label = { Text("Cerrar sesión", color = Color.Red) },
                     selected = false,
@@ -267,7 +234,7 @@ fun DashboardScreen(
             ) {
                 item {
                     Text("Dashboard", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("Resumen operacional · Exportación XLSX", color = Color.Gray, fontSize = 14.sp)
+                    Text("Resumen operacional", color = Color.Gray, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
@@ -378,7 +345,7 @@ fun DashboardScreen(
                                                 Text("Ver todas", fontSize = 12.sp)
                                             }
                                         }
-                                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                         Row(modifier = Modifier.fillMaxWidth()) {
                                             Text("ID", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                             Text("SECTOR", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -413,7 +380,7 @@ fun DashboardScreen(
                                 ) {
                                     Column(modifier = Modifier.padding(16.dp)) {
                                         Text("COMPOSICIÓN POR ESPECIE", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.Gray)
-                                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                         if (top.isEmpty()) {
                                             Text("Sin datos", color = Color.Gray, fontSize = 12.sp)
                                         } else {
@@ -426,7 +393,7 @@ fun DashboardScreen(
                                                 ) {
                                                     Text(name, modifier = Modifier.width(70.dp), fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                                     LinearProgressIndicator(
-                                                        progress = ratio,
+                                                        progress = { ratio },
                                                         modifier = Modifier.fillMaxWidth().height(12.dp),
                                                         color = Color(0xFF2D6A4F),
                                                         trackColor = Color(0xFFEEEEEE)
@@ -455,7 +422,7 @@ fun DashboardScreen(
                                                 Text("Ver todas", fontSize = 12.sp)
                                             }
                                         }
-                                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                         Row(modifier = Modifier.fillMaxWidth()) {
                                             Text("ID", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                             Text("SECTOR", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -490,7 +457,7 @@ fun DashboardScreen(
                                 ) {
                                     Column(modifier = Modifier.padding(16.dp)) {
                                         Text("COMPOSICIÓN POR ESPECIE", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.Gray)
-                                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                         if (top.isEmpty()) {
                                             Text("Sin datos", color = Color.Gray, fontSize = 12.sp)
                                         } else {
@@ -503,7 +470,7 @@ fun DashboardScreen(
                                                 ) {
                                                     Text(name, modifier = Modifier.width(70.dp), fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                                     LinearProgressIndicator(
-                                                        progress = ratio,
+                                                        progress = { ratio },
                                                         modifier = Modifier.fillMaxWidth().height(12.dp),
                                                         color = Color(0xFF2D6A4F),
                                                         trackColor = Color(0xFFEEEEEE)

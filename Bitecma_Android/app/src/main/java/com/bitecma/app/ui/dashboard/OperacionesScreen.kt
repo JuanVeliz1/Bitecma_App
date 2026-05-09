@@ -1,5 +1,4 @@
 package com.bitecma.app.ui.dashboard
-
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -8,28 +7,36 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
 import androidx.compose.ui.text.style.TextAlign
 import com.bitecma.app.network.*
 import com.bitecma.app.data.*
-import com.bitecma.app.utils.ExcelExporter
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -37,12 +44,10 @@ import java.time.format.DateTimeFormatter
 import java.time.LocalDate
 
 private enum class OperacionSource { BD, LC }
-
 private data class OperacionItem(
     val op: OperacionDto,
     val source: OperacionSource
 )
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OperacionesScreen(navController: NavController, userId: Int) {
@@ -120,38 +125,49 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
             if (botesRes.isSuccessful) {
                 AppState.isOnline = true
                 botesMaestros = botesRes.body()?.data ?: emptyList()
-            } else {
-                AppState.isOnline = false
             }
 
             val especiesRes = RetrofitClient.apiService.getEspecies()
             if (especiesRes.isSuccessful) {
                 AppState.isOnline = true
                 especiesMaestras = especiesRes.body()?.data ?: emptyList()
-            } else {
-                AppState.isOnline = false
             }
 
-            // Cargar Sectores, Caletas y OPAs desde API
+            // Cargar Sectores, Caletas y OPAs desde API de forma explícita
             try {
                 val secRes = RetrofitClient.apiService.getSectoresAmerb()
                 if (secRes.isSuccessful) {
-                    AppState.isOnline = true
                     sectoresAmerbApi = secRes.body()?.data ?: emptyList()
+                    println("Sectores cargados: ${sectoresAmerbApi.size}")
                 }
                 
                 val calRes = RetrofitClient.apiService.getCaletas()
                 if (calRes.isSuccessful) {
-                    AppState.isOnline = true
                     caletasApi = calRes.body()?.data ?: emptyList()
+                    println("Caletas cargadas: ${caletasApi.size}")
                 }
                 
                 val opaRes = RetrofitClient.apiService.getOpas()
                 if (opaRes.isSuccessful) {
-                    AppState.isOnline = true
                     opasApi = opaRes.body()?.data ?: emptyList()
+                    println("OPAs cargadas: ${opasApi.size}")
                 }
-            } catch (_: Exception) {}
+
+                // Fallback: Si no hay caletas de la API, extraer de botes maestros
+                if (caletasApi.isEmpty() && botesMaestros.isNotEmpty()) {
+                    caletasApi = botesMaestros.mapNotNull { it.caleta }.distinct().map { 
+                        // Intentar inferir la región del bote para la caleta
+                        val bote = botesMaestros.find { b -> b.caleta == it }
+                        val regId = bote?.region_rom?.let { rom -> 
+                            regiones.find { r -> r.rom == rom }?.id 
+                        }
+                        CaletaDto(nombre = it, region = regId)
+                    }
+                    println("Caletas extraídas de botes: ${caletasApi.size}")
+                }
+            } catch (e: Exception) {
+                println("Error cargando dropdowns: ${e.message}")
+            }
 
             val response = RetrofitClient.apiService.getOperaciones()
             if (response.isSuccessful) {
@@ -161,55 +177,82 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     DataManager.operacionesBd.clear()
                     DataManager.operacionesBd.addAll(body.data ?: emptyList())
                 }
-            } else {
-                AppState.isOnline = false
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             AppState.isOnline = false
+            println("Error en carga inicial: ${e.message}")
         }
         isLoading = false
     }
 
     // --- DIALOGO DE SELECCIÓN DE ESPECIES (L-P) ---
     if (showSpeciesDialog) {
-        AlertDialog(
+        Dialog(
             onDismissRequest = { showSpeciesDialog = false },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-            modifier = Modifier.fillMaxWidth(0.98f).padding(8.dp),
-            content = {
-                Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Especies a muestrear (L-P) — Bote ${currentBoteForData?.nombre?.uppercase()}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
-                            IconButton(onClick = { showSpeciesDialog = false }, modifier = Modifier.border(1.dp, Color.Red, RoundedCornerShape(4.dp)).size(24.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD)),
-                            modifier = Modifier.fillMaxWidth()
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.9f)
+                    .padding(vertical = 16.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White,
+                tonalElevation = 8.dp
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Header con degradado estilo web
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(Color(0xFF003366), Color(0xFF00509E))
+                                )
+                            )
+                            .padding(20.dp)
+                    ) {
+                        Text(
+                            "ESPECIES A MUESTREAR",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        IconButton(
+                            onClick = { showSpeciesDialog = false },
+                            modifier = Modifier.align(Alignment.CenterEnd)
                         ) {
-                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF1565C0), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Default.Close, null, tint = Color.White)
+                        }
+                    }
+
+                    Column(modifier = Modifier.padding(20.dp).weight(1f)) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD).copy(alpha = 0.8f)),
+                            modifier = Modifier.fillMaxWidth(),
+                            border = BorderStroke(1.dp, Color(0xFFBBDEFB))
+                        ) {
+                            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Info, null, tint = Color(0xFF1565C0), modifier = Modifier.size(24.dp))
+                                Spacer(modifier = Modifier.width(16.dp))
                                 Text(
-                                    "Selecciona las especies a muestrear en este bote. Para algas, el ingreso será por diámetro del disco.",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF1565C0)
+                                    "Selecciona las especies para el bote ${currentBoteForData?.nombre?.uppercase()}. Para algas, el ingreso será por diámetro del disco.",
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF1565C0),
+                                    lineHeight = 18.sp
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                        Box(modifier = Modifier.height(300.dp)) {
+                        // Grid de especies
+                        Box(modifier = Modifier.weight(1f)) {
                             val chunkedEspecies = especiesMaestras.chunked(3)
-                            LazyColumn {
+                            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 items(chunkedEspecies) { rowEspecies ->
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                         rowEspecies.forEach { esp ->
                                             SpeciesGridItem(
                                                 especie = esp,
@@ -226,85 +269,155 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                         }
                                         repeat(3 - rowEspecies.size) { Spacer(Modifier.weight(1f)) }
                                     }
-                                    Spacer(Modifier.height(8.dp))
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Tipos de muestreo por especie", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text("TIPOS DE MUESTREO POR ESPECIE", fontWeight = FontWeight.Black, fontSize = 11.sp, color = Color.Gray, letterSpacing = 1.sp)
+                        Spacer(modifier = Modifier.height(12.dp))
                         
-                        // Mostrar especies seleccionadas con su tipo de muestreo
-                        LazyColumn(modifier = Modifier.heightIn(max = 150.dp)) {
-                            items(selectedSpeciesIds) { id ->
-                                val esp = especiesMaestras.find { it.id == id } ?: return@items
-                                Row(
-                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                     verticalAlignment = Alignment.CenterVertically,
-                                     horizontalArrangement = Arrangement.SpaceBetween
-                                 ) {
-                                     Text("${esp.com} (${esp.sci})", fontSize = 12.sp, modifier = Modifier.weight(1f))
-                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                         Text("L-P", fontSize = 11.sp, color = Color.Gray)
-                                        Checkbox(checked = true, onCheckedChange = { }, enabled = false)
+                        // Lista de seleccionadas estilizada
+                        Surface(
+                            modifier = Modifier
+                                .heightIn(max = 140.dp)
+                                .fillMaxWidth(),
+                            color = Color(0xFFF8F9FA),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                        ) {
+                            LazyColumn(modifier = Modifier.padding(12.dp)) {
+                                items(selectedSpeciesIds) { id ->
+                                    val esp = especiesMaestras.find { it.id == id } ?: return@items
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text(esp.com, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
+                                            Text(esp.sci ?: "", fontSize = 10.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = Color.Gray)
+                                        }
+                                        Surface(
+                                            color = Color(0xFF00897B).copy(alpha = 0.1f),
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                "L-P / DENSIDAD", 
+                                                fontSize = 10.sp, 
+                                                fontWeight = FontWeight.Black, 
+                                                color = Color(0xFF00897B), 
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                            )
+                                        }
                                     }
+                                }
+                                if (selectedSpeciesIds.isEmpty()) {
+                                    item { Text("No hay especies seleccionadas", fontSize = 13.sp, color = Color.Gray, modifier = Modifier.padding(12.dp)) }
                                 }
                             }
                         }
+                    }
 
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedButton(onClick = { showSpeciesDialog = false }, modifier = Modifier.weight(1f)) { Text("Cancelar") }
-                            Button(
-                                onClick = { 
-                                    showSpeciesDialog = false
-                                    // Inicializar transectos si están vacíos
-                                    if (transectosList.isEmpty()) {
-                                        transectosList.add(DensidadUnidadDto(num = 1, tipo = currentBoteForData?.densTipo ?: "Transecto"))
-                                    }
-                                    showTransectDialog = true
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
-                            ) { Text("Confirmar") }
+                    // Footer
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showSpeciesDialog = false },
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(26.dp),
+                            border = BorderStroke(1.5.dp, Color.Gray)
+                        ) { 
+                            Text("CANCELAR", fontWeight = FontWeight.Bold, color = Color.Gray) 
+                        }
+                        Button(
+                            onClick = { 
+                                showSpeciesDialog = false
+                                if (transectosList.isEmpty()) {
+                                    transectosList.add(DensidadUnidadDto(num = 1, tipo = currentBoteForData?.densTipo ?: "Transecto", area = 120.0))
+                                }
+                                showTransectDialog = true
+                            },
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(26.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF003366)),
+                            enabled = selectedSpeciesIds.isNotEmpty()
+                        ) { 
+                            Text("CONTINUAR", fontWeight = FontWeight.Bold) 
                         }
                     }
                 }
             }
-        )
+        }
     }
 
     // --- DIALOGO DE AGREGAR TRANSECTOS ---
     if (showTransectDialog) {
-        AlertDialog(
+        Dialog(
             onDismissRequest = { showTransectDialog = false },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-            modifier = Modifier.fillMaxWidth(0.98f).padding(8.dp),
-            content = {
-                Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Agregar transectos — ${currentBoteForData?.nombre?.uppercase()}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
-                            IconButton(onClick = { showTransectDialog = false }, modifier = Modifier.border(1.dp, Color.Red, RoundedCornerShape(4.dp)).size(24.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.9f)
+                    .padding(vertical = 16.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White,
+                tonalElevation = 8.dp
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Header con degradado estilo web
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(Color(0xFF003366), Color(0xFF00509E))
+                                )
+                            )
+                            .padding(20.dp)
+                    ) {
+                        Text(
+                            "AGREGAR TRANSECTOS — ${currentBoteForData?.nombre?.uppercase()}",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        IconButton(
+                            onClick = { showTransectDialog = false },
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        ) {
+                            Icon(Icons.Default.Close, null, tint = Color.White)
+                        }
+                    }
+
+                    Column(modifier = Modifier.padding(20.dp).weight(1f)) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD).copy(alpha = 0.8f)),
+                            modifier = Modifier.fillMaxWidth(),
+                            border = BorderStroke(1.dp, Color(0xFFBBDEFB))
+                        ) {
+                            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Info, null, tint = Color(0xFF1565C0), modifier = Modifier.size(24.dp))
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text(
+                                    "Completa el primer transecto y usa \"Replicar\" para copiar la configuración al resto.",
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF1565C0),
+                                    lineHeight = 18.sp
+                                )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
                         
-                        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD)), modifier = Modifier.fillMaxWidth()) {
-                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF1565C0), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Completa el primer transecto y usa \"Replicar\" para copiar la configuración al resto.", fontSize = 11.sp, color = Color(0xFF1565C0))
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             OutlinedButton(
                                 onClick = { 
                                     if (transectosList.isNotEmpty()) {
@@ -318,327 +431,432 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                         }
                                     }
                                 }, 
-                                shape = RoundedCornerShape(8.dp)
-                            ) { Text("Replicar fila 1", fontSize = 12.sp) }
-                            
-                            OutlinedButton(
-                                onClick = { 
-                                    transectosList.add(DensidadUnidadDto(num = transectosList.size + 1, tipo = currentBoteForData?.densTipo ?: "Transecto"))
-                                }, 
-                                shape = RoundedCornerShape(8.dp)
-                            ) { Text("Agregar transecto", fontSize = 12.sp) }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Header de la tabla
-                        Row(Modifier.fillMaxWidth().background(Color(0xFFF1F3F5)).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("#", Modifier.width(30.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                            Text("ÁREA", Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                            Text("SUSTRATO", Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                            selectedSpeciesIds.forEach { id ->
-                                val esp = especiesMaestras.find { it.id == id }
-                                Text(esp?.com?.take(4)?.uppercase() ?: "ESP", Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray, textAlign = TextAlign.Center)
+                                shape = RoundedCornerShape(26.dp),
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                border = BorderStroke(1.5.dp, Color(0xFF003366))
+                            ) { 
+                                Text("REPLICAR FILA 1", fontSize = 13.sp, color = Color(0xFF003366), fontWeight = FontWeight.Bold) 
                             }
-                            Spacer(Modifier.width(40.dp))
-                        }
-
-                        LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                            itemsIndexed(transectosList) { index, t ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text((index + 1).toString(), Modifier.width(30.dp), fontSize = 12.sp)
-                                    
-                                    // Área
-                                    OutlinedTextField(
-                                        value = t.area?.toString() ?: "",
-                                        onValueChange = { transectosList[index] = t.copy(area = it.toDoubleOrNull()) },
-                                        modifier = Modifier.weight(1f),
-                                        textStyle = TextStyle(fontSize = 12.sp),
-                                        singleLine = true
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    
-                                    // Sustrato
-                                    OutlinedTextField(
-                                        value = t.sustrato ?: "",
-                                        onValueChange = { transectosList[index] = t.copy(sustrato = it) },
-                                        modifier = Modifier.weight(1.5f),
-                                        textStyle = TextStyle(fontSize = 12.sp),
-                                        singleLine = true
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-
-                                    // Counts por especie
-                                    selectedSpeciesIds.forEach { id ->
-                                        val currentCounts = t.counts ?: emptyMap()
-                                        OutlinedTextField(
-                                            value = currentCounts[id.toString()]?.toString() ?: "",
-                                            onValueChange = { newVal ->
-                                                val newCounts = currentCounts.toMutableMap()
-                                                newVal.toIntOrNull()?.let { newCounts[id.toString()] = it } ?: newCounts.remove(id.toString())
-                                                transectosList[index] = t.copy(counts = newCounts)
-                                            },
-                                            modifier = Modifier.weight(1f),
-                                            textStyle = TextStyle(fontSize = 12.sp, textAlign = TextAlign.Center),
-                                            singleLine = true
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                    }
-
-                                    IconButton(onClick = { transectosList.removeAt(index) }, modifier = Modifier.width(40.dp)) {
-                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                                HorizontalDivider(color = Color(0xFFEEEEEE))
+                            
+                            Button(
+                                onClick = { 
+                                    transectosList.add(DensidadUnidadDto(num = transectosList.size + 1, tipo = currentBoteForData?.densTipo ?: "Transecto", area = 120.0))
+                                }, 
+                                shape = RoundedCornerShape(26.dp),
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF003366))
+                            ) { 
+                                Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("AGREGAR FILA", fontSize = 13.sp, fontWeight = FontWeight.Bold) 
                             }
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
-                        
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedButton(onClick = { showTransectDialog = false }, modifier = Modifier.weight(1f)) { Text("Cancelar") }
-                            Button(
-                                onClick = { 
-                                    val currentBote = currentBoteForData ?: return@Button
-                                    val currentOp = currentOpForBotes ?: return@Button
-                                    
-                                    val updatedBote = currentBote.copy(
-                                        transectos = transectosList.toList()
-                                    )
-                                    
-                                    // 1. Actualizar botesList (para cuando el diálogo de botes está abierto)
-                                    val bIndex = botesList.indexOfFirst { it.zona == updatedBote.zona }
-                                    if (bIndex >= 0) {
-                                        botesList[bIndex] = updatedBote
-                                    }
 
-                                    // 2. Actualizar DataManager directamente
-                                    val updatedBotes = (currentOp.botes ?: emptyList()).toMutableList()
-                                    val opBoteIdx = updatedBotes.indexOfFirst { it.zona == updatedBote.zona }
-                                    if (opBoteIdx >= 0) {
-                                        updatedBotes[opBoteIdx] = updatedBote
-                                    } else {
-                                        updatedBotes.add(updatedBote)
-                                    }
-                                    
-                                    val updatedOp = currentOp.copy(botes = updatedBotes)
-                                    
-                                    // Actualizar en la lista correspondiente
-                                    val idxBd = DataManager.operacionesBd.indexOfFirst { it.id == updatedOp.id }
-                                    if (idxBd >= 0) {
-                                        DataManager.operacionesBd[idxBd] = updatedOp
-                                    } else {
-                                        val idxLc = DataManager.operacionesLc.indexOfFirst { it.id == updatedOp.id }
-                                        if (idxLc >= 0) {
-                                            DataManager.operacionesLc[idxLc] = updatedOp
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(1.dp, Color(0xFFF1F3F5), RoundedCornerShape(12.dp))
+                        ) {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                itemsIndexed(transectosList) { index, t ->
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
+                                        border = BorderStroke(1.dp, Color(0xFFF1F3F5)),
+                                        shape = RoundedCornerShape(14.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    "UNIDAD ${(t.num ?: (index + 1)).toString()}",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = Color(0xFF003366),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                IconButton(onClick = { transectosList.removeAt(index) }, modifier = Modifier.size(28.dp)) {
+                                                    Icon(Icons.Default.Delete, null, tint = Color.LightGray, modifier = Modifier.size(18.dp))
+                                                }
+                                            }
+
+                                            Spacer(Modifier.height(10.dp))
+
+                                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text("ÁREA (M²)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                                    BasicTextField(
+                                                        value = (t.area ?: 120.0).toString(),
+                                                        onValueChange = { transectosList[index] = t.copy(area = it.toDoubleOrNull()) },
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(top = 6.dp)
+                                                            .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(10.dp))
+                                                            .background(Color.White, RoundedCornerShape(10.dp))
+                                                            .padding(10.dp),
+                                                        textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Black),
+                                                        singleLine = true,
+                                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                                    )
+                                                }
+                                                Column(modifier = Modifier.weight(1.4f)) {
+                                                    Text("SUSTRATO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                                    BasicTextField(
+                                                        value = t.sustrato.orEmpty(),
+                                                        onValueChange = { transectosList[index] = t.copy(sustrato = it) },
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(top = 6.dp)
+                                                            .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(10.dp))
+                                                            .background(Color.White, RoundedCornerShape(10.dp))
+                                                            .padding(10.dp),
+                                                        textStyle = TextStyle(fontSize = 13.sp),
+                                                        singleLine = true
+                                                    )
+                                                }
+                                            }
+
+                                            Spacer(Modifier.height(12.dp))
+
+                                            Text("FAUNA (FILAS)", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.Gray, letterSpacing = 1.sp)
+                                            Spacer(Modifier.height(8.dp))
+
+                                            val currentCounts = t.counts ?: emptyMap()
+                                            if (selectedSpeciesIds.isEmpty()) {
+                                                Text("No hay fauna seleccionada.", fontSize = 12.sp, color = Color.Gray)
+                                            } else {
+                                                selectedSpeciesIds.forEach { sid ->
+                                                    val esp = especiesMaestras.find { it.id == sid }
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(vertical = 6.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Text(
+                                                            (esp?.com ?: "ID $sid").uppercase(),
+                                                            modifier = Modifier.weight(1f),
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFF003366),
+                                                            maxLines = 1
+                                                        )
+                                                        BasicTextField(
+                                                            value = currentCounts[sid.toString()]?.toString().orEmpty(),
+                                                            onValueChange = { newVal ->
+                                                                val newCounts = currentCounts.toMutableMap()
+                                                                newVal.toIntOrNull()?.let { newCounts[sid.toString()] = it } ?: newCounts.remove(sid.toString())
+                                                                transectosList[index] = t.copy(counts = newCounts)
+                                                            },
+                                                            modifier = Modifier
+                                                                .width(92.dp)
+                                                                .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(10.dp))
+                                                                .background(Color.White, RoundedCornerShape(10.dp))
+                                                                .padding(10.dp),
+                                                            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Black, color = Color(0xFF00897B)),
+                                                            singleLine = true,
+                                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                                        )
+                                                    }
+                                                    HorizontalDivider(color = Color(0xFFF1F3F5))
+                                                }
+                                            }
                                         }
                                     }
-                                    
-                                    showTransectDialog = false 
-                                }, 
-                                modifier = Modifier.weight(1f), 
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
-                            ) { Text("Guardar") }
+                                }
+                            }
+                        }
+                    }
+
+                    // Footer
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showTransectDialog = false },
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(26.dp),
+                            border = BorderStroke(1.5.dp, Color.Gray)
+                        ) { 
+                            Text("CANCELAR", fontWeight = FontWeight.Bold, color = Color.Gray) 
+                        }
+                        Button(
+                            onClick = { 
+                                val currentBote = currentBoteForData ?: return@Button
+                                val currentOp = currentOpForBotes ?: return@Button
+                                
+                                val normalizedTransectos = transectosList.map { t ->
+                                    t.copy(area = t.area ?: 120.0)
+                                }
+                                val updatedBote = currentBote.copy(
+                                    transectos = normalizedTransectos
+                                )
+                                
+                                val bIndex = botesList.indexOfFirst { it.zona == updatedBote.zona }
+                                if (bIndex >= 0) { botesList[bIndex] = updatedBote }
+
+                                val updatedBotes = (currentOp.botes ?: emptyList()).toMutableList()
+                                val opBoteIdx = updatedBotes.indexOfFirst { it.zona == updatedBote.zona }
+                                if (opBoteIdx >= 0) { updatedBotes[opBoteIdx] = updatedBote } else { updatedBotes.add(updatedBote) }
+                                
+                                val updatedOp = currentOp.copy(botes = updatedBotes)
+                                val idxBd = DataManager.operacionesBd.indexOfFirst { it.id == updatedOp.id }
+                                if (idxBd >= 0) { DataManager.operacionesBd[idxBd] = updatedOp } else {
+                                    val idxLc = DataManager.operacionesLc.indexOfFirst { it.id == updatedOp.id }
+                                    if (idxLc >= 0) { DataManager.operacionesLc[idxLc] = updatedOp }
+                                }
+                                
+                                showTransectDialog = false 
+                            }, 
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(26.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                        ) { 
+                            Text("GUARDAR DATOS", fontWeight = FontWeight.Bold) 
                         }
                     }
                 }
             }
-        )
+        }
     }
 
     // --- DIALOGO DE NUEVA OPERACIÓN ---
     if (showAddDialog) {
-        AlertDialog(
+        Dialog(
             onDismissRequest = { showAddDialog = false },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-            modifier = Modifier.fillMaxWidth(0.95f).padding(16.dp),
-            content = {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 6.dp
-                ) {
-                    Column(modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState())) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.9f)
+                    .padding(vertical = 16.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White,
+                tonalElevation = 12.dp
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Header con estilo web moderno
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(Color(0xFF003366), Color(0xFF00509E))
+                                )
+                            )
+                            .padding(20.dp)
+                    ) {
+                        Text(
+                            "NUEVA OPERACIÓN",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        IconButton(
+                            onClick = { showAddDialog = false },
+                            modifier = Modifier.align(Alignment.CenterEnd)
                         ) {
-                            Text("Nueva operación", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
-                            IconButton(onClick = { showAddDialog = false }) {
-                                Icon(Icons.Default.Close, contentDescription = "Cerrar")
+                            Icon(Icons.Default.Close, null, tint = Color.White)
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(20.dp)
+                    ) {
+                        // Sección: Ubicación
+                        Text("UBICACIÓN Y SECTOR", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFF003366))
+                        Spacer(Modifier.height(12.dp))
+                        
+                        Text("REGIÓN", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        var expandedReg by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { expandedReg = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.5.dp, Color(0xFFF1F3F5))
+                            ) {
+                                Text(selectedRegionId?.let { regionLabelById[it] } ?: "Seleccionar Región", color = Color.Black, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+                                Icon(Icons.Default.ArrowDropDown, null, tint = Color.Gray)
+                            }
+                            DropdownMenu(expanded = expandedReg, onDismissRequest = { expandedReg = false }) {
+                                regiones.forEach { r ->
+                                    DropdownMenuItem(
+                                        text = { Text(listOfNotNull(r.rom, r.nom).joinToString(" — ")) },
+                                        onClick = { selectedRegionId = r.id; expandedReg = false }
+                                    )
+                                }
                             }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Column(modifier = Modifier.weight(1.5f)) {
-                                Text("REGIÓN", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00897B))
-                                var expandedRegion by remember { mutableStateOf(false) }
-                                Box {
-                                    OutlinedButton(
-                                        onClick = { expandedRegion = true },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Text(selectedRegionId?.let { regionLabelById[it] } ?: "Seleccionar", fontSize = 13.sp)
-                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                                    }
-                                    DropdownMenu(expanded = expandedRegion, onDismissRequest = { expandedRegion = false }) {
-                                        regiones.forEach { r ->
-                                            DropdownMenuItem(
-                                                text = { Text(listOfNotNull(r.rom, r.nom).joinToString(" — ")) },
-                                                onClick = { selectedRegionId = r.id; expandedRegion = false }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("N° SEGUIMIENTO / ESBA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00897B))
-                                OutlinedTextField(
-                                    value = numSeguimiento,
-                                    onValueChange = { numSeguimiento = it },
-                                    placeholder = { Text("Ej: 16", fontSize = 13.sp) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp),
-                                    singleLine = true
-                                )
-                            }
+                        Text("SECTOR AMERB", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        val filteredSectores = if (sectoresAmerbApi.isNotEmpty()) {
+                            sectoresAmerbApi.filter { it.region == selectedRegionId }
+                        } else {
+                            OperacionData.sectoresAmerb.filter { it.region == selectedRegionId }.map { SectorAmerbDto(it.id, it.nombre, it.region) }
                         }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Text("SECTOR AMERB", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00897B))
                         SearchableDropdown(
                             value = sectorAmerbInput,
                             onValueChange = { sectorAmerbInput = it },
-                            placeholder = "Buscar sector AMERB...",
-                            items = if (sectoresAmerbApi.isNotEmpty()) {
-                                sectoresAmerbApi.filter { it.region == selectedRegionId }
-                            } else {
-                                OperacionData.sectoresAmerb.filter { it.region == selectedRegionId }.map { SectorAmerbDto(it.id, it.nombre, it.region) }
-                            },
+                            placeholder = if (filteredSectores.isEmpty()) "Sin sectores en esta región" else "Buscar sector...",
+                            items = filteredSectores,
                             itemLabel = { it.nombre },
                             onItemSelected = { selectedSectorAmerb = SectorAmerb(it.id, it.nombre, it.region ?: 0); sectorAmerbInput = it.nombre }
                         )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
+                        HorizontalDivider(color = Color(0xFFF1F3F5))
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                        Text("CALETA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00897B))
+                        // Sección: Identificación
+                        Text("IDENTIFICACIÓN", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFF003366))
+                        Spacer(Modifier.height(12.dp))
+
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("N° SEGUIMIENTO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                OutlinedTextField(
+                                    value = numSeguimiento,
+                                    onValueChange = { numSeguimiento = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = Color(0xFFF1F3F5))
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("FECHA INICIO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                OutlinedTextField(
+                                    value = fechaInicio,
+                                    onValueChange = { },
+                                    readOnly = true,
+                                    modifier = Modifier.fillMaxWidth().clickable { showInicioDatePicker = true },
+                                    enabled = false,
+                                    shape = RoundedCornerShape(12.dp),
+                                    trailingIcon = { Icon(Icons.Default.CalendarToday, null, tint = Color(0xFF003366)) },
+                                    colors = OutlinedTextFieldDefaults.colors(disabledBorderColor = Color(0xFFF1F3F5), disabledTextColor = Color.Black)
+                                )
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text("FECHA TÉRMINO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                OutlinedTextField(
+                                    value = fechaFin,
+                                    onValueChange = { },
+                                    readOnly = true,
+                                    modifier = Modifier.fillMaxWidth().clickable { showFinDatePicker = true },
+                                    enabled = false,
+                                    shape = RoundedCornerShape(12.dp),
+                                    trailingIcon = { Icon(Icons.Default.CalendarToday, null, tint = Color(0xFF003366)) },
+                                    colors = OutlinedTextFieldDefaults.colors(disabledBorderColor = Color(0xFFF1F3F5), disabledTextColor = Color.Black)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text("CALETA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        val filteredCaletas = if (caletasApi.isNotEmpty()) {
+                            caletasApi.filter { it.region == selectedRegionId }.map { it.nombre }
+                        } else {
+                            OperacionData.caletasByRegion[selectedRegionId] ?: emptyList()
+                        }
                         SearchableDropdown(
                             value = caletaInput,
                             onValueChange = { caletaInput = it },
-                            placeholder = "Buscar caleta...",
-                            items = if (caletasApi.isNotEmpty()) {
-                                caletasApi.filter { it.region == selectedRegionId }.map { it.nombre }
-                            } else {
-                                OperacionData.caletasByRegion[selectedRegionId] ?: emptyList()
-                            },
+                            placeholder = if (filteredCaletas.isEmpty()) "Sin caletas en esta región" else "Buscar caleta...",
+                            items = filteredCaletas,
                             itemLabel = { it },
                             onItemSelected = { selectedCaleta = it; caletaInput = it },
-                            showAddNew = true,
-                            addNewLabel = "Agregar Caleta..."
+                            showAddNew = true
                         )
 
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("TIPO ORGANIZACIÓN", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00897B))
-                                var expandedTipo by remember { mutableStateOf(false) }
-                                Box {
-                                    OutlinedButton(
-                                        onClick = { expandedTipo = true },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Text(tipoOrg, fontSize = 13.sp)
-                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                                    }
-                                    DropdownMenu(expanded = expandedTipo, onDismissRequest = { expandedTipo = false }) {
-                                        OperacionData.tiposOrganizacion.forEach { t ->
-                                            DropdownMenuItem(text = { Text(t) }, onClick = { tipoOrg = t; expandedTipo = false })
-                                        }
-                                    }
-                                }
-                            }
-                            Column(modifier = Modifier.weight(1.5f)) {
-                                Text("ORGANIZACIÓN (OPA)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00897B))
-                                SearchableDropdown(
-                                    value = opaInput,
-                                    onValueChange = { opaInput = it },
-                                    placeholder = "Buscar organización...",
-                                    items = if (opasApi.isNotEmpty()) {
-                                        opasApi.filter { it.region == selectedRegionId }
-                                    } else {
-                                        OperacionData.opas.filter { it.region == selectedRegionId }.map { OpaDto(it.id, it.nombre, it.region) }
-                                    },
-                                    itemLabel = { it.nombre },
-                                    onItemSelected = { selectedOpa = Opa(it.id, it.nombre, it.nombre, it.region ?: 0); opaInput = it.nombre },
-                                    showAddNew = true,
-                                    addNewLabel = "Agregar Organización..."
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("FECHA INICIO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00897B))
-                                OutlinedTextField(
-                                    value = fechaInicio,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    modifier = Modifier.fillMaxWidth().clickable { showInicioDatePicker = true },
-                                    shape = RoundedCornerShape(8.dp),
-                                    trailingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                                    enabled = false,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                                        disabledBorderColor = MaterialTheme.colorScheme.outline,
-                                        disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("FECHA FIN", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00897B))
-                                OutlinedTextField(
-                                    value = fechaFin,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    modifier = Modifier.fillMaxWidth().clickable { showFinDatePicker = true },
-                                    shape = RoundedCornerShape(8.dp),
-                                    trailingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                                    enabled = false,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                                        disabledBorderColor = MaterialTheme.colorScheme.outline,
-                                        disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                )
-                            }
-                        }
-
+                        Spacer(modifier = Modifier.height(24.dp))
+                        HorizontalDivider(color = Color(0xFFF1F3F5))
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedButton(onClick = { showAddDialog = false }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
-                                Text("Cancelar")
+                        // Sección: Organización
+                        Text("ORGANIZACIÓN (OPA)", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFF003366))
+                        Spacer(Modifier.height(12.dp))
+
+                        Text("TIPO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        var expandedTipo by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { expandedTipo = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.5.dp, Color(0xFFF1F3F5))
+                            ) {
+                                Text(tipoOrg, color = Color.Black, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+                                Icon(Icons.Default.ArrowDropDown, null, tint = Color.Gray)
                             }
-                            Button(onClick = { showConfirmDialog = true }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))) {
-                                Text("Crear")
+                            DropdownMenu(expanded = expandedTipo, onDismissRequest = { expandedTipo = false }) {
+                                OperacionData.tiposOrganizacion.forEach { t ->
+                                    DropdownMenuItem(text = { Text(t) }, onClick = { tipoOrg = t; expandedTipo = false })
+                                }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text("NOMBRE OPA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        val filteredOpas = if (opasApi.isNotEmpty()) {
+                            opasApi.filter { it.region == selectedRegionId }
+                        } else {
+                            OperacionData.opas.filter { it.region == selectedRegionId }.map { OpaDto(it.id, it.nombre, it.region) }
+                        }
+                        SearchableDropdown(
+                            value = opaInput,
+                            onValueChange = { opaInput = it },
+                            placeholder = if (filteredOpas.isEmpty()) "Sin OPAs en esta región" else "Buscar OPA...",
+                            items = filteredOpas,
+                            itemLabel = { it.nombre },
+                            onItemSelected = { selectedOpa = Opa(it.id, it.nombre, it.nombre, it.region ?: 0); opaInput = it.nombre },
+                            showAddNew = true
+                        )
+                    }
+
+                    // Footer con botones robustos
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showAddDialog = false },
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(26.dp),
+                            border = BorderStroke(1.5.dp, Color(0.6f, 0.6f, 0.6f))
+                        ) { Text("CANCELAR", fontWeight = FontWeight.Bold, color = Color.Gray) }
+                        
+                        Button(
+                            onClick = { showConfirmDialog = true },
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(26.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                        ) { Text("CREAR", fontWeight = FontWeight.Bold) }
                     }
                 }
             }
-        )
+        }
     }
 
     // --- DIALOGO DE CONFIRMACIÓN ---
@@ -706,115 +924,191 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
 
     // --- DIALOGO DE BOTES ---
     if (showBotesDialog) {
-        AlertDialog(
+        Dialog(
             onDismissRequest = { showBotesDialog = false },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-            modifier = Modifier.fillMaxWidth(0.98f).padding(8.dp),
-            content = {
-                Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Botes — ${currentOpForBotes?.id}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
-                            IconButton(onClick = { showBotesDialog = false }, modifier = Modifier.border(1.dp, Color.Red, RoundedCornerShape(4.dp)).size(24.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(Modifier.fillMaxWidth().background(Color(0xFFF1F3F5)).padding(8.dp)) {
-                            Text("#", Modifier.weight(0.3f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                            Text("ZONA MUESTREO", Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                            Text("BOTE", Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                            Text("BUZO", Modifier.weight(1.2f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                            Text("UNIDAD", Modifier.weight(1.2f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                            Spacer(Modifier.weight(0.8f))
-                        }
-                        LazyColumn(modifier = Modifier.weight(1f, fill = false).heightIn(max = 400.dp)) {
-                            itemsIndexed(botesList) { index, bote ->
-                                BoteRowItem(
-                                    index = index + 1,
-                                    bote = bote,
-                                    botesMaestros = botesMaestros,
-                                    operationRegionId = currentOpForBotes?.region,
-                                    onDelete = { botesList.removeAt(index) },
-                                    onUpdate = { updated -> botesList[index] = updated }
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.9f)
+                    .padding(vertical = 16.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White,
+                tonalElevation = 12.dp
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Header con degradado
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(Color(0xFF003366), Color(0xFF00509E))
                                 )
-                                HorizontalDivider(color = Color(0xFFEEEEEE))
-                            }
+                            )
+                            .padding(20.dp)
+                    ) {
+                        Text(
+                            "GESTIÓN DE BOTES — ${currentOpForBotes?.id}",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        IconButton(
+                            onClick = { showBotesDialog = false },
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        ) {
+                            Icon(Icons.Default.Close, null, tint = Color.White)
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            OutlinedButton(onClick = { botesList.add(OperacionBoteDto(zona = botesList.size + 1, densTipo = "Transecto")) }) {
-                                Text("Agregar fila")
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { showBotesDialog = false }) { Text("Cancelar") }
-                                Button(
-                                    onClick = { 
-                                        val op = currentOpForBotes ?: return@Button
-                                        val updatedBotes = botesList.toList()
-                                        
-                                        scope.launch {
-                                            if (AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
-                                                try {
-                                                    val req = OperacionUpsertRequest(
-                                                        id = op.id,
-                                                        region = op.region,
-                                                        sector = op.sector,
-                                                        sectorAmerbId = op.sectorAmerbId,
-                                                        sectorAmerb = op.sectorAmerb,
-                                                        tipoOrg = op.tipoOrg,
-                                                        opaId = op.opaId,
-                                                        org = op.org,
-                                                        numSeg = op.numSeg,
-                                                        fechaInicio = op.fechaInicio,
-                                                        fechaFin = op.fechaFin,
-                                                        botes = updatedBotes
-                                                    )
-                                                    val res = RetrofitClient.apiService.crearOperacion(req)
-                                                    if (res.isSuccessful && res.body()?.ok == true) {
-                                                        val savedOp = res.body()!!.data!!
-                                                        // Forzar actualización en el DataManager con los datos que acabamos de enviar
-                                                        // por si la API no los devuelve de inmediato en el GET
-                                                        val finalSavedOp = if (savedOp.botes.isNullOrEmpty() && updatedBotes.isNotEmpty()) {
-                                                            savedOp.copy(botes = updatedBotes)
-                                                        } else {
-                                                            savedOp
-                                                        }
-                                                        
-                                                        val idx = DataManager.operacionesBd.indexOfFirst { it.id == op.id }
-                                                        if (idx >= 0) DataManager.operacionesBd[idx] = finalSavedOp
-                                                        else DataManager.operacionesBd.add(0, finalSavedOp)
-                                                        DataManager.operacionesLc.removeAll { it.id == op.id }
-                                                    }
-                                                } catch (_: Exception) {}
-                                            } else {
-                                                val localOp = op.copy(botes = updatedBotes)
-                                                // Buscar en ambas listas para actualizar localmente
-                                                val idxBd = DataManager.operacionesBd.indexOfFirst { it.id == op.id }
-                                                if (idxBd >= 0) {
-                                                    DataManager.operacionesBd[idxBd] = localOp
-                                                } else {
-                                                    val idxLc = DataManager.operacionesLc.indexOfFirst { it.id == op.id }
-                                                    if (idxLc >= 0) {
-                                                        DataManager.operacionesLc[idxLc] = localOp
-                                                    } else {
-                                                        DataManager.operacionesLc.add(localOp)
-                                                    }
-                                                }
-                                            }
-                                            showBotesDialog = false
+                    }
+
+                    Column(modifier = Modifier.padding(20.dp).weight(1f)) {
+                        // Header de la tabla estilizado
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                                .background(Color(0xFFF1F3F5))
+                                .padding(vertical = 12.dp, horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("#", Modifier.weight(0.3f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                            Text("ZONA", Modifier.weight(0.8f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                            Text("BOTE (MAESTRO)", Modifier.weight(1.8f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                            Text("BUZO", Modifier.weight(1.2f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                            Text("UNIDAD", Modifier.weight(1.2f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                            Spacer(Modifier.width(36.dp))
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(1.dp, Color(0xFFF1F3F5), RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
+                        ) {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                itemsIndexed(botesList) { index, bote ->
+                                    val opRegionRom = currentOpForBotes?.region?.let { rid -> regiones.find { it.id == rid }?.rom }
+                                    BoteRowItem(
+                                        index = index + 1,
+                                        bote = bote,
+                                        botesMaestros = botesMaestros,
+                                        operationRegionRom = opRegionRom,
+                                        operationCaleta = currentOpForBotes?.sector,
+                                        onDelete = { botesList.removeAt(index) },
+                                        onUpdate = { updated -> botesList[index] = updated }
+                                    )
+                                    HorizontalDivider(color = Color(0xFFF1F3F5), modifier = Modifier.padding(horizontal = 12.dp))
+                                }
+                                if (botesList.isEmpty()) {
+                                    item {
+                                        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                            Text("No hay botes registrados", color = Color.Gray)
                                         }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
-                                ) {
-                                    Text("Guardar botes")
+                                    }
                                 }
                             }
                         }
                     }
+
+                    // Footer
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = { botesList.add(OperacionBoteDto(zona = botesList.size + 1, densTipo = "Transecto")) },
+                            modifier = Modifier.height(52.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.5.dp, Color(0xFF003366))
+                        ) {
+                            Icon(Icons.Default.Add, null, tint = Color(0xFF003366))
+                            Spacer(Modifier.width(8.dp))
+                            Text("AGREGAR FILA", fontWeight = FontWeight.Bold, color = Color(0xFF003366))
+                        }
+                        
+                        Spacer(Modifier.weight(1f))
+
+                        OutlinedButton(
+                            onClick = { showBotesDialog = false },
+                            modifier = Modifier.height(52.dp),
+                            shape = RoundedCornerShape(26.dp),
+                            border = BorderStroke(1.5.dp, Color.Gray)
+                        ) { Text("CANCELAR", fontWeight = FontWeight.Bold, color = Color.Gray) }
+
+                        Button(
+                            onClick = { 
+                                val op = currentOpForBotes ?: return@Button
+                                val updatedBotesUi = botesList.toList()
+                                val localOp = op.copy(botes = updatedBotesUi)
+                                currentOpForBotes = localOp
+                                val idxBd = DataManager.operacionesBd.indexOfFirst { it.id == op.id }
+                                if (idxBd >= 0) {
+                                    DataManager.operacionesBd[idxBd] = localOp
+                                } else {
+                                    val idxLc = DataManager.operacionesLc.indexOfFirst { it.id == op.id }
+                                    if (idxLc >= 0) DataManager.operacionesLc[idxLc] = localOp
+                                    else DataManager.operacionesLc.add(localOp)
+                                }
+                                showBotesDialog = false
+                                
+                                scope.launch {
+                                    if (AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
+                                        try {
+                                            val updatedBotesApi = updatedBotesUi.map { b ->
+                                                val dens = if (b.densTipo.equals("Cuadrante", true) || b.densTipo.equals("cuadrante", true)) "cuadrante" else "transecto"
+                                                b.copy(
+                                                    densTipo = dens,
+                                                    transectos = b.transectos?.map { t ->
+                                                        t.copy(tipo = if (dens == "cuadrante") "cuadrante" else "transecto")
+                                                    }
+                                                )
+                                            }
+                                            val req = OperacionUpsertRequest(
+                                                id = op.id,
+                                                region = op.region,
+                                                sector = op.sector,
+                                                sectorAmerbId = op.sectorAmerbId,
+                                                sectorAmerb = op.sectorAmerb,
+                                                tipoOrg = op.tipoOrg,
+                                                opaId = op.opaId,
+                                                org = op.org,
+                                                numSeg = op.numSeg,
+                                                fechaInicio = op.fechaInicio,
+                                                fechaFin = op.fechaFin,
+                                                botes = updatedBotesApi
+                                            )
+                                            val res = RetrofitClient.apiService.actualizarOperacion(op.id, req)
+                                            if (res.isSuccessful && res.body()?.ok == true) {
+                                                val savedOp = res.body()!!.data!!
+                                                val finalSavedOp = if (savedOp.botes.isNullOrEmpty() && updatedBotesUi.isNotEmpty()) {
+                                                    savedOp.copy(botes = updatedBotesUi)
+                                                } else {
+                                                    savedOp
+                                                }
+                                                
+                                                val idx = DataManager.operacionesBd.indexOfFirst { it.id == op.id }
+                                                if (idx >= 0) DataManager.operacionesBd[idx] = finalSavedOp else DataManager.operacionesBd.add(0, finalSavedOp)
+                                                currentOpForBotes = finalSavedOp
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                                }
+                            },
+                            modifier = Modifier.height(52.dp),
+                            shape = RoundedCornerShape(26.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                        ) {
+                            Text("GUARDAR CAMBIOS", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
-        )
+        }
     }
 
     if (showInicioDatePicker) {
@@ -827,10 +1121,21 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Operaciones", color = Color.White) },
+                title = { 
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Operaciones", color = Color.White)
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(if (AppState.isOnline) Color(0xFF4CAF50) else Color.Gray, androidx.compose.foundation.shape.CircleShape)
+                                .border(1.dp, Color.White, androidx.compose.foundation.shape.CircleShape)
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
                     }
                 },
                 actions = {
@@ -862,88 +1167,86 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     Text("Cada operación agrupa botes con sus datos técnicos", color = Color.Gray, fontSize = 12.sp)
                     Spacer(modifier = Modifier.height(16.dp))
                 }
-                items(operacionesUi) { item ->
-                    OperacionCard(
-                        item = item,
-                        regionLabel = item.op.region?.let { regionLabelById[it] },
-                        isExpanded = expandedOpId == item.op.id,
-                        onExpandClick = { expandedOpId = if (expandedOpId == item.op.id) null else item.op.id },
-                        onEditBotesClick = {
-                            currentOpForBotes = item.op
-                            botesList.clear()
-                            botesList.addAll(item.op.botes ?: emptyList())
-                            showBotesDialog = true
-                        },
-                        onEditDataClick = { bote ->
-                            currentOpForBotes = item.op
-                            currentBoteForData = bote
-                            
-                            // Inicializar datos para el diálogo
-                            selectedSpeciesIds.clear()
-                            // Extraer IDs de especies de los transectos existentes
-                            val existingSpecies = bote.transectos?.flatMap { it.counts?.keys ?: emptySet() }?.mapNotNull { it.toIntOrNull() }?.distinct() ?: emptyList()
-                            selectedSpeciesIds.addAll(existingSpecies)
-                            
-                            transectosList.clear()
-                            transectosList.addAll(bote.transectos ?: emptyList())
-                            
-                            showSpeciesDialog = true
-                        },
-                        onDocClick = { navController.navigate("documentos/$userId") },
-                        onDeleteClick = {
-                            scope.launch {
-                                var success = true
-                                if (item.source == OperacionSource.BD && AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
-                                    try {
-                                        val res = RetrofitClient.apiService.eliminarOperacion(item.op.id)
-                                        success = res.isSuccessful && res.body()?.ok == true
-                                    } catch (_: Exception) { success = false }
-                                }
+                val grouped = operacionesUi
+                    .groupBy { it.op.region }
+                    .toList()
+                    .sortedWith(compareBy({ it.first ?: Int.MAX_VALUE }, { it.first ?: Int.MAX_VALUE }))
+
+                grouped.forEach { (regionId, ops) ->
+                    item {
+                        Text(
+                            regionId?.let { regionLabelById[it] } ?: "Sin región",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF003366),
+                            modifier = Modifier.padding(top = 6.dp, bottom = 10.dp)
+                        )
+                    }
+                    items(ops) { item ->
+                        OperacionCard(
+                            item = item,
+                            isExpanded = expandedOpId == item.op.id,
+                            onExpandClick = { expandedOpId = if (expandedOpId == item.op.id) null else item.op.id },
+                            onEditBotesClick = {
+                                currentOpForBotes = item.op
+                                botesList.clear()
+                                botesList.addAll(item.op.botes ?: emptyList())
+                                showBotesDialog = true
+                            },
+                            onEditDataClick = { bote ->
+                                currentOpForBotes = item.op
+                                currentBoteForData = bote
                                 
-                                if (success) {
-                                    if (item.source == OperacionSource.BD) {
-                                        DataManager.operacionesBd.remove(item.op)
-                                    } else {
-                                        DataManager.operacionesLc.remove(item.op)
+                                selectedSpeciesIds.clear()
+                                val existingSpecies = bote.transectos?.flatMap { it.counts?.keys ?: emptySet() }?.mapNotNull { it.toIntOrNull() }?.distinct() ?: emptyList()
+                                selectedSpeciesIds.addAll(existingSpecies)
+                                
+                                transectosList.clear()
+                                transectosList.addAll(bote.transectos ?: emptyList())
+                                
+                                showSpeciesDialog = true
+                            },
+                            onDeleteClick = {
+                                scope.launch {
+                                    var success = true
+                                    if (item.source == OperacionSource.BD && AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
+                                        try {
+                                            val res = RetrofitClient.apiService.eliminarOperacion(item.op.id)
+                                            success = res.isSuccessful && res.body()?.ok == true
+                                        } catch (_: Exception) { success = false }
+                                    }
+                                    
+                                    if (success) {
+                                        if (item.source == OperacionSource.BD) DataManager.operacionesBd.remove(item.op)
+                                        else DataManager.operacionesLc.remove(item.op)
                                     }
                                 }
-                            }
-                        },
-                        onExcelClick = {
-                            scope.launch {
-                                try {
-                                    ExcelExporter.generateOperacionExcel(item.op)
-                                    // Para descarga directa necesitamos un launcher en la UI, 
-                                    // por ahora notificamos o usamos el de Documentos.
-                                    // Mejor redirigir a documentos con la op seleccionada.
-                                    navController.navigate("documentos/$userId")
-                                } catch (_: Exception) {}
-                            }
-                        },
-                        onUploadLocalClick = {
-                            if (item.source != OperacionSource.LC) return@OperacionCard
-                            if (!AppState.isOnline || AppState.authToken.isNullOrBlank()) return@OperacionCard
-                            scope.launch {
-                                try {
-                                    val res = RetrofitClient.apiService.crearOperacion(
-                                        OperacionUpsertRequest(
-                                            id = item.op.id,
-                                            region = item.op.region,
-                                            sector = item.op.sector,
-                                            fechaInicio = item.op.fechaInicio,
-                                            fechaFin = item.op.fechaFin,
-                                            botes = item.op.botes
+                            },
+                            onUploadLocalClick = {
+                                if (item.source != OperacionSource.LC) return@OperacionCard
+                                if (!AppState.isOnline || AppState.authToken.isNullOrBlank()) return@OperacionCard
+                                scope.launch {
+                                    try {
+                                        val res = RetrofitClient.apiService.crearOperacion(
+                                            OperacionUpsertRequest(
+                                                id = item.op.id,
+                                                region = item.op.region,
+                                                sector = item.op.sector,
+                                                fechaInicio = item.op.fechaInicio,
+                                                fechaFin = item.op.fechaFin,
+                                                botes = item.op.botes
+                                            )
                                         )
-                                    )
-                                    if (res.isSuccessful && res.body()?.ok == true) {
-                                        DataManager.operacionesLc.remove(item.op)
-                                        DataManager.operacionesBd.add(0, res.body()!!.data!!)
-                                    }
-                                } catch (_: Exception) {}
+                                        if (res.isSuccessful && res.body()?.ok == true) {
+                                            DataManager.operacionesLc.remove(item.op)
+                                            DataManager.operacionesBd.add(0, res.body()!!.data!!)
+                                        }
+                                    } catch (_: Exception) {}
+                                }
                             }
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
                 }
             }
         }
@@ -953,14 +1256,11 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
 @Composable
 private fun OperacionCard(
     item: OperacionItem,
-    regionLabel: String?,
     isExpanded: Boolean,
     onExpandClick: () -> Unit,
     onEditBotesClick: () -> Unit,
     onEditDataClick: (OperacionBoteDto) -> Unit,
-    onDocClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    onExcelClick: () -> Unit,
     onUploadLocalClick: () -> Unit
 ) {
     val op = item.op
@@ -982,16 +1282,20 @@ private fun OperacionCard(
                             }
                         }
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text(regionLabel ?: "Sin región", fontWeight = FontWeight.ExtraBold, color = Color(0xFF003366), fontSize = 16.sp)
+                        val titulo = listOfNotNull(
+                            (op.sectorAmerb?.takeIf { it.isNotBlank() } ?: op.sector.takeIf { it.isNotBlank() }),
+                            op.numSeg?.toString()?.takeIf { it.isNotBlank() },
+                            op.fechaInicio?.takeIf { it.isNotBlank() }
+                        ).joinToString(" · ")
+                        Text(titulo, fontWeight = FontWeight.ExtraBold, color = Color(0xFF003366), fontSize = 15.sp)
                     }
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text("${op.id} · ${op.sector?.uppercase() ?: ""} · ${op.fechaInicio ?: ""}", fontSize = 12.sp, color = Color.Gray)
+                    Text(op.id, fontSize = 12.sp, color = Color.Gray)
                 }
                 Row {
                     if (item.source == OperacionSource.LC && AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
                         IconButton(onClick = onUploadLocalClick) { Icon(Icons.Default.CloudUpload, null, tint = Color(0xFF1B5E20)) }
                     }
-                    IconButton(onClick = onExcelClick) { Icon(Icons.Default.FileDownload, null, tint = Color(0xFF00897B)) }
                     IconButton(onClick = onEditBotesClick) { Icon(Icons.Default.Edit, null, tint = Color.Gray) }
                     IconButton(onClick = onDeleteClick) { Icon(Icons.Default.Delete, null, tint = Color.Red.copy(alpha = 0.7f)) }
                     IconButton(onClick = onExpandClick) { Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = "Expandir") }
@@ -1009,16 +1313,6 @@ private fun OperacionCard(
                         BoteItem(bote = bote, onClick = { onEditDataClick(bote) })
                         Spacer(modifier = Modifier.height(10.dp)) 
                     }
-                }
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = onDocClick, 
-                    modifier = Modifier.fillMaxWidth(), 
-                    shape = RoundedCornerShape(25.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
-                ) { 
-                    Text("Ir a Documentación (XLSX)", color = Color.White, fontWeight = FontWeight.Bold) 
                 }
             }
         }
@@ -1061,126 +1355,795 @@ fun BoteItem(bote: OperacionBoteDto, onClick: () -> Unit) {
 @Composable
 fun SpeciesGridItem(especie: EspecieDto, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Card(
-        modifier = modifier.clickable { onClick() },
-        shape = RoundedCornerShape(8.dp),
-        border = if (isSelected) BorderStroke(2.dp, Color(0xFF00897B)) else null,
-        colors = CardDefaults.cardColors(containerColor = if (isSelected) Color(0xFFE8F5E9) else Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        modifier = modifier.clickable { onClick() }.height(80.dp),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(
+            width = if (isSelected) 2.dp else 1.dp,
+            color = if (isSelected) Color(0xFF003366) else Color(0xFFF1F3F5)
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) Color(0xFFE3F2FD).copy(alpha = 0.5f) else Color.White
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 1.dp)
     ) {
-        Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(especie.com ?: "Especie", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
-            Text(especie.sci ?: "", fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontSize = 9.sp, color = Color.Gray, maxLines = 1)
-            if (isSelected) { Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF00897B), modifier = Modifier.size(14.dp)) }
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier.padding(8.dp).fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    especie.com, 
+                    fontWeight = FontWeight.Bold, 
+                    fontSize = 12.sp, 
+                    maxLines = 2, 
+                    textAlign = TextAlign.Center,
+                    color = if (isSelected) Color(0xFF003366) else Color.Black
+                )
+                Text(
+                    especie.sci ?: "", 
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, 
+                    fontSize = 9.sp, 
+                    color = Color.Gray, 
+                    maxLines = 1,
+                    textAlign = TextAlign.Center
+                )
+            }
+            if (isSelected) {
+                Icon(
+                    Icons.Default.CheckCircle, 
+                    null, 
+                    tint = Color(0xFF003366), 
+                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(16.dp)
+                )
+            }
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun <T> SearchableDropdown(value: String, onValueChange: (String) -> Unit, placeholder: String, items: List<T>, itemLabel: (T) -> String, onItemSelected: (T) -> Unit, showAddNew: Boolean = false, addNewLabel: String = "") {
+fun <T> SearchableDropdown(
+    value: String, 
+    onValueChange: (String) -> Unit, 
+    placeholder: String, 
+    items: List<T>, 
+    itemLabel: (T) -> String, 
+    onItemSelected: (T) -> Unit, 
+    showAddNew: Boolean = false
+) {
     var expanded by remember { mutableStateOf(false) }
     val filteredItems = items.filter { itemLabel(it).contains(value, ignoreCase = true) }
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        OutlinedTextField(value = value, onValueChange = { onValueChange(it); expanded = true }, placeholder = { Text(placeholder, fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), singleLine = true, trailingIcon = { IconButton(onClick = { expanded = !expanded }) { Icon(Icons.Default.ArrowDropDown, null) } })
-        DropdownMenu(expanded = expanded && (filteredItems.isNotEmpty() || showAddNew), onDismissRequest = { expanded = false }, modifier = Modifier.fillMaxWidth(0.8f).heightIn(max = 250.dp)) {
-            if (showAddNew) {
-                DropdownMenuItem(text = { Text(addNewLabel, color = Color(0xFF00897B), fontWeight = FontWeight.Bold) }, onClick = { expanded = false })
-                HorizontalDivider()
-            }
-            filteredItems.forEach { item -> DropdownMenuItem(text = { Text(itemLabel(item), fontSize = 13.sp) }, onClick = { onItemSelected(item); expanded = false }) }
-        }
-    }
-}
-
-@Composable
-fun BoteRowItem(index: Int, bote: OperacionBoteDto, botesMaestros: List<BoteMaestroDto>, operationRegionId: Int?, onDelete: () -> Unit, onUpdate: (OperacionBoteDto) -> Unit) {
-    var showUnitWarning by remember { mutableStateOf(false) }
-    var nextUnitType by remember { mutableStateOf("") }
-    var showBoteSearch by remember { mutableStateOf(false) }
-    if (showUnitWarning) {
-        AlertDialog(onDismissRequest = { showUnitWarning = false }, title = { Text("BITECMA Dice:") }, text = { Text("Al cambiar la unidad de muestreo, solo se perderán los datos de densidad (los datos de peso-longitud se mantendrán). ¿Continuar?") }, confirmButton = { Button(onClick = { onUpdate(bote.copy(densTipo = nextUnitType)); showUnitWarning = false }) { Text("Aceptar") } }, dismissButton = { TextButton(onClick = { showUnitWarning = false }) { Text("Cancelar") } })
-    }
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(index.toString(), Modifier.weight(0.3f), fontSize = 12.sp)
-        OutlinedTextField(value = bote.zona?.toString() ?: "", onValueChange = { onUpdate(bote.copy(zona = it.toIntOrNull())) }, modifier = Modifier.weight(1f), textStyle = TextStyle(fontSize = 12.sp))
-        Box(Modifier.weight(1.5f)) {
-            OutlinedTextField(value = bote.nombre ?: "", onValueChange = {}, readOnly = true, placeholder = { Text("Nombre bote", fontSize = 11.sp) }, modifier = Modifier.fillMaxWidth().clickable { showBoteSearch = true }, enabled = false, colors = OutlinedTextFieldDefaults.colors(disabledBorderColor = Color.LightGray, disabledTextColor = Color.Black))
-            if (showBoteSearch) { BoteMaestroSearchDialog(botes = botesMaestros, operationRegionId = operationRegionId, onSelect = { m -> onUpdate(bote.copy(nombre = m.nombre, boteMaestroId = m.id)); showBoteSearch = false }, onDismiss = { showBoteSearch = false }) }
-        }
-        OutlinedTextField(value = bote.buzo ?: "", onValueChange = { onUpdate(bote.copy(buzo = it)) }, modifier = Modifier.weight(1.2f), placeholder = { Text("Nombre buzo", fontSize = 11.sp) }, textStyle = TextStyle(fontSize = 12.sp))
-        var expandedUnit by remember { mutableStateOf(false) }
-        Box(Modifier.weight(1.2f)) {
-            OutlinedButton(onClick = { expandedUnit = true }, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(2.dp), shape = RoundedCornerShape(4.dp)) {
-                Text(bote.densTipo ?: "Transecto", fontSize = 10.sp)
-                Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(14.dp))
-            }
-            DropdownMenu(expanded = expandedUnit, onDismissRequest = { expandedUnit = false }) {
-                listOf("Transecto", "Cuadrante").forEach { type -> DropdownMenuItem(text = { Text(type, fontSize = 12.sp) }, onClick = { if (type == "Cuadrante" && bote.densTipo == "Transecto") { nextUnitType = type; showUnitWarning = true } else { onUpdate(bote.copy(densTipo = type)) }; expandedUnit = false }) }
-            }
-        }
-        TextButton(onClick = onDelete, Modifier.weight(0.8f)) { Text("Eliminar", color = Color.Gray, fontSize = 10.sp) }
-    }
-}
-
-@Composable
-fun BoteMaestroSearchDialog(botes: List<BoteMaestroDto>, operationRegionId: Int?, onSelect: (BoteMaestroDto) -> Unit, onDismiss: () -> Unit) {
-    var query by remember { mutableStateOf("") }
-    
-    // Filtrar primero por la región de la operación, si está disponible
-    val filtered = botes.filter { b ->
-        val matchesQuery = (b.nombre ?: "").contains(query, true) || 
-                          (b.nrpa ?: "").contains(query, true) || 
-                          (b.nmatricula ?: "").contains(query, true)
-        
-        // Si hay una región seleccionada en la operación, priorizar o filtrar por ella
-        // (Opcional: puedes decidir si mostrar todos o solo los de la región)
-        matchesQuery
-    }.sortedByDescending { 
-        // Priorizar los que coinciden con la región de la operación
-        if (operationRegionId != null) {
-            // Aquí asumo que b.region o b.region_rom se puede mapear al ID
-            // Pero por simplicidad, solo mostramos el filtro de búsqueda
-            true 
-        } else true
-    }
-
-    AlertDialog(onDismissRequest = onDismiss, confirmButton = {}, title = { 
-        Column {
-            Text("Buscar Bote Maestro", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = query, 
-                onValueChange = { query = it }, 
-                placeholder = { Text("Nombre, RPA o matrícula...") }, 
-                modifier = Modifier.fillMaxWidth(), 
-                trailingIcon = { Icon(Icons.Default.Search, null) },
-                shape = RoundedCornerShape(8.dp)
+        OutlinedTextField(
+            value = value, 
+            onValueChange = { 
+                onValueChange(it)
+                expanded = true 
+            }, 
+            placeholder = { Text(placeholder, fontSize = 13.sp, color = Color.Gray) }, 
+            modifier = Modifier.fillMaxWidth(), 
+            shape = RoundedCornerShape(12.dp), 
+            singleLine = true,
+            trailingIcon = { 
+                IconButton(onClick = { expanded = !expanded }) { 
+                    Icon(if (expanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown, null, tint = Color(0xFF003366)) 
+                } 
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor = Color(0xFFF1F3F5),
+                focusedBorderColor = Color(0xFF003366)
             )
-        }
-    }, text = {
-        LazyColumn(Modifier.heightIn(max = 400.dp)) {
-            items(filtered) { b ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable { onSelect(b) }.padding(vertical = 4.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA))
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(b.nombre ?: "S/N", fontWeight = FontWeight.Bold, color = Color(0xFF003366))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("RPA: ${b.nrpa ?: "—"}", fontSize = 11.sp, color = Color.Gray)
-                            Text("MAT: ${b.nmatricula ?: "—"}", fontSize = 11.sp, color = Color.Gray)
+        )
+
+        if (expanded && (filteredItems.isNotEmpty() || showAddNew)) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 250.dp)
+                    .padding(top = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White,
+                tonalElevation = 8.dp,
+                border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+            ) {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    if (showAddNew && value.isNotBlank() && filteredItems.none { itemLabel(it).equals(value, true) }) {
+                        item {
+                            DropdownMenuItem(
+                                text = { 
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Add, null, tint = Color(0xFF00897B), modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Agregar '$value'...", color = Color(0xFF00897B), fontWeight = FontWeight.Bold) 
+                                    }
+                                }, 
+                                onClick = { 
+                                    // Aquí se podría implementar la lógica de agregar nuevo
+                                    expanded = false 
+                                }
+                            )
+                            HorizontalDivider(color = Color(0xFFF1F3F5))
                         }
-                        Text("CALETA: ${b.caleta ?: "—"} · REGIÓN: ${b.region_rom ?: b.region ?: "—"}", fontSize = 10.sp, color = Color.Gray)
+                    }
+                    items(filteredItems) { item ->
+                        DropdownMenuItem(
+                            text = { Text(itemLabel(item), fontSize = 14.sp) }, 
+                            onClick = { 
+                                onItemSelected(item)
+                                expanded = false 
+                            }
+                        )
                     }
                 }
             }
-            if (filtered.isEmpty()) {
-                item {
-                    Text("No se encontraron botes", modifier = Modifier.fillMaxWidth().padding(16.dp), textAlign = TextAlign.Center, color = Color.Gray)
+        }
+    }
+}
+
+@Composable
+fun BoteRowItem(
+    index: Int,
+    bote: OperacionBoteDto,
+    botesMaestros: List<BoteMaestroDto>,
+    operationRegionRom: String?,
+    operationCaleta: String?,
+    onDelete: () -> Unit,
+    onUpdate: (OperacionBoteDto) -> Unit
+) {
+    var showUnitWarning by remember { mutableStateOf(false) }
+    var nextUnitType by remember { mutableStateOf("") }
+    var showBoteSearch by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp, horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(index.toString(), Modifier.weight(0.3f), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+        
+        // Zona Muestreo
+        BasicTextField(
+            value = bote.zona?.toString() ?: "",
+            onValueChange = { onUpdate(bote.copy(zona = it.toIntOrNull())) },
+            modifier = Modifier
+                .weight(0.8f)
+                .padding(horizontal = 4.dp)
+                .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(8.dp))
+                .background(Color.White, RoundedCornerShape(8.dp))
+                .padding(10.dp),
+            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        )
+
+        // Bote con buscador estilizado
+        Box(Modifier.weight(1.8f).padding(horizontal = 4.dp)) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showBoteSearch = true }
+                    .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(8.dp))
+                    .background(Color.White, RoundedCornerShape(8.dp))
+                    .padding(10.dp),
+                color = Color.Transparent
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        bote.nombre ?: "Seleccionar Bote", 
+                        fontSize = 13.sp, 
+                        fontWeight = if (bote.nombre != null) FontWeight.Bold else FontWeight.Normal,
+                        color = if (bote.nombre != null) Color.Black else Color.Gray,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(Icons.Default.Search, null, tint = Color(0xFF003366), modifier = Modifier.size(16.dp))
+                }
+            }
+            if (showBoteSearch) { 
+                BoteMaestroSearchDialog(
+                    botes = botesMaestros, 
+                    operationRegionRom = operationRegionRom,
+                    operationCaleta = operationCaleta,
+                    onSelect = { m -> onUpdate(bote.copy(nombre = m.nombre, boteMaestroId = m.id)); showBoteSearch = false }, 
+                    onDismiss = { showBoteSearch = false }
+                ) 
+            }
+        }
+
+        // Buzo
+        BasicTextField(
+            value = bote.buzo ?: "",
+            onValueChange = { onUpdate(bote.copy(buzo = it)) },
+            modifier = Modifier
+                .weight(1.2f)
+                .padding(horizontal = 4.dp)
+                .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(8.dp))
+                .background(Color.White, RoundedCornerShape(8.dp))
+                .padding(10.dp),
+            textStyle = TextStyle(fontSize = 13.sp),
+            singleLine = true
+        )
+
+        // Unidad
+        var expandedUni by remember { mutableStateOf(false) }
+        Box(Modifier.weight(1.2f).padding(horizontal = 4.dp)) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expandedUni = true }
+                    .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(8.dp))
+                    .background(Color.White, RoundedCornerShape(8.dp))
+                    .padding(10.dp),
+                color = Color.Transparent
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(bote.densTipo ?: "Unidad", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.ArrowDropDown, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                }
+            }
+            DropdownMenu(expanded = expandedUni, onDismissRequest = { expandedUni = false }) {
+                listOf("Transecto", "Cuadrante").forEach { u ->
+                    DropdownMenuItem(text = { Text(u, fontSize = 13.sp) }, onClick = { 
+                        if (bote.densTipo != u && !bote.transectos.isNullOrEmpty()) {
+                            nextUnitType = u
+                            showUnitWarning = true
+                        } else {
+                            onUpdate(bote.copy(densTipo = u))
+                        }
+                        expandedUni = false 
+                    })
                 }
             }
         }
-    })
+
+        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Default.Delete, null, tint = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
+        }
+    }
+
+    if (showUnitWarning) {
+        AlertDialog(
+            onDismissRequest = { showUnitWarning = false },
+            title = { Text("BITECMA Dice:", fontWeight = FontWeight.Black, color = Color(0xFF003366)) },
+            text = { Text("Al cambiar la unidad de muestreo, solo se perderán los datos de densidad. ¿Desea continuar?", fontSize = 14.sp) },
+            confirmButton = {
+                Button(
+                    onClick = { 
+                        onUpdate(bote.copy(densTipo = nextUnitType, transectos = emptyList()))
+                        showUnitWarning = false 
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                ) { Text("SÍ, CAMBIAR") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnitWarning = false }) { Text("CANCELAR", color = Color.Gray) }
+            }
+        )
+    }
+}
+
+@Composable
+fun BoteMaestroSearchDialog(
+    botes: List<BoteMaestroDto>,
+    operationRegionRom: String?,
+    operationCaleta: String?,
+    onSelect: (BoteMaestroDto) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    
+    // Estado para menús abatibles (jerarquía)
+    var expandedRegionRom by remember { mutableStateOf<String?>(null) }
+    var expandedCaleta by remember { mutableStateOf<String?>(null) }
+
+    val fixedRom = operationRegionRom?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
+    val fixedCaleta = operationCaleta?.trim()?.takeIf { it.isNotBlank() }
+
+    val baseBotes = remember(botes, fixedRom, fixedCaleta) {
+        botes.filter { b ->
+            val rom = (b.region_rom ?: b.region)?.trim()?.uppercase()
+            val cal = b.caleta?.trim()
+            (fixedRom == null || (rom != null && rom == fixedRom)) &&
+                (fixedCaleta == null || (cal != null && cal.equals(fixedCaleta, ignoreCase = true)))
+        }
+    }
+
+    val queryFilteredBotes = baseBotes.filter { b ->
+        (b.nombre ?: "").contains(query, true) ||
+            (b.nrpa ?: "").contains(query, true) ||
+            (b.nmatricula ?: "").contains(query, true)
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.9f),
+            shape = RoundedCornerShape(20.dp),
+            color = Color.White
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFFF8F9FA)).padding(16.dp)
+                ) {
+                    Text("SELECCIONAR BOTE MAESTRO", fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color(0xFF003366))
+                    IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd).size(24.dp)) {
+                        Icon(Icons.Default.Close, null, tint = Color.Gray)
+                    }
+                }
+
+                Column(modifier = Modifier.padding(16.dp)) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text("Buscar por nombre, RPA o matrícula...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = { Icon(Icons.Default.Search, null, tint = Color(0xFF003366)) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = Color(0xFFF1F3F5))
+                    )
+                    
+                    Spacer(Modifier.height(16.dp))
+                    Text("JERARQUÍA: REGIÓN > CALETA > BOTE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.Gray, letterSpacing = 1.sp)
+                    Spacer(Modifier.height(8.dp))
+
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        if (query.isEmpty()) {
+                            // Mostrar Jerarquía: Región > Caleta > Bote
+                            val regions = if (fixedRom != null) listOf(fixedRom) else {
+                                baseBotes.mapNotNull { it.region_rom ?: it.region }.distinct().sorted()
+                            }
+                            
+                            items(regions) { rom ->
+                                val isRegionExpanded = fixedRom != null || expandedRegionRom == rom
+                                HierarchicalItem(
+                                    label = "REGIÓN $rom",
+                                    isExpanded = isRegionExpanded,
+                                    onClick = { 
+                                        if (fixedRom == null) {
+                                            expandedRegionRom = if (isRegionExpanded) null else rom
+                                            expandedCaleta = null
+                                        }
+                                    },
+                                    level = 0
+                                )
+                                
+                                if (isRegionExpanded) {
+                                    val caletas = if (fixedCaleta != null) listOf(fixedCaleta) else {
+                                        baseBotes.filter { (it.region_rom ?: it.region) == rom }
+                                            .mapNotNull { it.caleta }
+                                            .distinct()
+                                            .sorted()
+                                    }
+                                    
+                                    caletas.forEach { caleta ->
+                                        val isCaletaExpanded = fixedCaleta != null || expandedCaleta == caleta
+                                        HierarchicalItem(
+                                            label = caleta.uppercase(),
+                                            isExpanded = isCaletaExpanded,
+                                            onClick = { if (fixedCaleta == null) expandedCaleta = if (isCaletaExpanded) null else caleta },
+                                            level = 1
+                                        )
+                                        
+                                        if (isCaletaExpanded) {
+                                            val botesInCaleta = baseBotes.filter { (it.region_rom ?: it.region) == rom && it.caleta?.equals(caleta, true) == true }
+                                            
+                                            botesInCaleta.forEach { b ->
+                                                BoteFinalItem(b, onSelect)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Mostrar Resultados de Búsqueda Directa
+                            items(queryFilteredBotes) { b ->
+                                BoteFinalItem(b, onSelect)
+                            }
+                            if (queryFilteredBotes.isEmpty()) {
+                                item {
+                                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                        Text("No se encontraron botes con '$query'", color = Color.Gray)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HierarchicalItem(label: String, isExpanded: Boolean, onClick: () -> Unit, level: Int) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp, horizontal = (level * 8).dp)
+            .clickable { onClick() },
+        color = if (isExpanded) Color(0xFFE3F2FD).copy(alpha = 0.5f) else Color.Transparent,
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                null,
+                tint = if (isExpanded) Color(0xFF003366) else Color.Gray,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                label,
+                fontSize = (14 - level).sp,
+                fontWeight = if (isExpanded) FontWeight.Black else FontWeight.Bold,
+                color = if (isExpanded) Color(0xFF003366) else Color.DarkGray
+            )
+        }
+    }
+}
+
+@Composable
+fun BoteFinalItem(b: BoteMaestroDto, onSelect: (BoteMaestroDto) -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp, horizontal = 24.dp)
+            .clickable { onSelect(b) },
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Color(0xFFF1F3F5)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.DirectionsBoat, null, tint = Color(0xFF003366), modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(b.nombre ?: "S/N", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("RPA: ${b.nrpa ?: "—"} · MAT: ${b.nmatricula ?: "—"}", fontSize = 11.sp, color = Color.Gray)
+            }
+            Spacer(Modifier.weight(1f))
+            Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF00897B), modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun OperacionDataDialog(
+    opInitial: OperacionDto,
+    regionLabel: String?,
+    especiesMaestras: List<EspecieDto>,
+    onDismiss: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var op by remember(opInitial.id) { mutableStateOf(opInitial) }
+    var tab by remember { mutableStateOf("DENSIDAD") }
+    var selectedBoteKey by remember { mutableStateOf<String?>(null) }
+    var unidadTipo by remember { mutableStateOf("transecto") }
+
+    LaunchedEffect(opInitial.id) {
+        try {
+            val res = RetrofitClient.apiService.getOperacion(opInitial.id)
+            if (res.isSuccessful && res.body()?.ok == true && res.body()?.data != null) {
+                val fresh = res.body()!!.data!!
+                op = fresh
+                val idx = DataManager.operacionesBd.indexOfFirst { it.id == fresh.id }
+                if (idx >= 0) DataManager.operacionesBd[idx] = fresh
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    fun boteKey(b: OperacionBoteDto): String {
+        return listOfNotNull(b.zona?.toString(), b.nombre, b.buzo).joinToString("|")
+    }
+
+    val botes = op.botes ?: emptyList()
+    val selectedBote = remember(op, selectedBoteKey) {
+        if (botes.isEmpty()) return@remember null
+        val key = selectedBoteKey
+        val found = if (key != null) botes.firstOrNull { boteKey(it) == key } else null
+        found ?: botes.first()
+    }
+    LaunchedEffect(op.id, botes.size) {
+        if (selectedBoteKey == null && botes.isNotEmpty()) {
+            selectedBoteKey = boteKey(botes.first())
+        }
+        if (unidadTipo.isBlank()) {
+            unidadTipo = "transecto"
+        }
+    }
+
+    val especiesById = remember(especiesMaestras) { especiesMaestras.associateBy { it.id } }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.92f),
+            shape = RoundedCornerShape(20.dp),
+            color = Color.White,
+            tonalElevation = 12.dp
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Brush.horizontalGradient(colors = listOf(Color(0xFF003366), Color(0xFF00509E))))
+                        .padding(18.dp)
+                ) {
+                    Column(modifier = Modifier.align(Alignment.CenterStart)) {
+                        Text(
+                            "DATOS DE OPERACIÓN",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            op.id,
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd)) {
+                        Icon(Icons.Default.Close, null, tint = Color.White)
+                    }
+                }
+
+                Column(modifier = Modifier.weight(1f).padding(16.dp)) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color(0xFFF8F9FA),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(regionLabel ?: "Sin región", fontWeight = FontWeight.Black, color = Color(0xFF003366), fontSize = 14.sp)
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "${op.sector} · ${op.fechaInicio.orEmpty()}${if (!op.fechaFin.isNullOrBlank()) " → ${op.fechaFin}" else ""}",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                            if (!op.org.isNullOrBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(op.org.orEmpty(), fontSize = 12.sp, color = Color.Gray)
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = tab == "DENSIDAD",
+                            onClick = { tab = "DENSIDAD" },
+                            label = { Text("EVADIR") }
+                        )
+                        FilterChip(
+                            selected = tab == "LP",
+                            onClick = { tab = "LP" },
+                            label = { Text("L-P") }
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (botes.isEmpty()) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = Color(0xFFF8F9FA),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize().padding(18.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text("Sin datos", fontWeight = FontWeight.Black, color = Color(0xFF003366), fontSize = 16.sp)
+                                Spacer(Modifier.height(6.dp))
+                                Text("Esta operación no tiene botes registrados.", color = Color.Gray, fontSize = 13.sp, textAlign = TextAlign.Center)
+                            }
+                        }
+                    } else {
+                        val scrollX = rememberScrollState()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(scrollX),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            botes.sortedBy { it.zona ?: 0 }.forEach { b ->
+                                val isSel = selectedBoteKey == boteKey(b)
+                                AssistChip(
+                                    onClick = {
+                                        selectedBoteKey = boteKey(b)
+                                        val dens = if (b.densTipo.equals("Cuadrante", true) || b.densTipo.equals("cuadrante", true)) "cuadrante" else "transecto"
+                                        unidadTipo = dens
+                                    },
+                                    label = {
+                                        Text(
+                                            "Zona ${b.zona ?: 0} · ${(b.nombre ?: "S/N").take(18)}",
+                                            fontWeight = if (isSel) FontWeight.Black else FontWeight.Bold
+                                        )
+                                    },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = if (isSel) Color(0xFFE3F2FD) else Color(0xFFF8F9FA),
+                                        labelColor = Color(0xFF003366)
+                                    ),
+                                    border = BorderStroke(1.dp, if (isSel) Color(0xFF003366) else Color(0xFFF1F3F5))
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+
+                        if (tab == "DENSIDAD") {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = unidadTipo == "transecto",
+                                    onClick = { unidadTipo = "transecto" },
+                                    label = { Text("Transecto") }
+                                )
+                                FilterChip(
+                                    selected = unidadTipo == "cuadrante",
+                                    onClick = { unidadTipo = "cuadrante" },
+                                    label = { Text("Cuadrante") }
+                                )
+                            }
+
+                            Spacer(Modifier.height(10.dp))
+
+                            val unitsAll = selectedBote?.transectos ?: emptyList()
+                            val units = unitsAll.filter { (it.tipo ?: "transecto").equals(unidadTipo, true) }
+                            val speciesIds = remember(unitsAll, unidadTipo, especiesMaestras.size) {
+                                units.flatMap { it.counts?.keys?.mapNotNull { k -> k.toIntOrNull() } ?: emptyList() }
+                                    .distinct()
+                                    .sortedWith(compareBy({ especiesById[it]?.com ?: "ZZZ" }, { it }))
+                            }
+
+                            Surface(
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color.White,
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                            ) {
+                                if (units.isEmpty()) {
+                                    Box(Modifier.fillMaxSize().padding(18.dp), contentAlignment = Alignment.Center) {
+                                        Text("Sin unidades registradas", color = Color.Gray)
+                                    }
+                                } else {
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFFF1F3F5))
+                                                .horizontalScroll(rememberScrollState())
+                                                .padding(vertical = 10.dp, horizontal = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("#", modifier = Modifier.width(40.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                                            Text("ÁREA", modifier = Modifier.width(70.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                                            Text("SUSTRATO", modifier = Modifier.width(100.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                                            speciesIds.forEach { sid ->
+                                                val name = especiesById[sid]?.com ?: "ID$sid"
+                                                Text(
+                                                    name.take(8).uppercase(),
+                                                    modifier = Modifier.width(82.dp),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = Color.DarkGray,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
+
+                                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                            itemsIndexed(units) { idx, u ->
+                                                val rowScroll = rememberScrollState()
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .horizontalScroll(rowScroll)
+                                                        .padding(vertical = 10.dp, horizontal = 12.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text((u.num ?: (idx + 1)).toString(), modifier = Modifier.width(40.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                    Text((u.area ?: 0.0).toString(), modifier = Modifier.width(70.dp), fontSize = 12.sp, textAlign = TextAlign.Center)
+                                                    Text(u.sustrato.orEmpty(), modifier = Modifier.width(100.dp), fontSize = 12.sp, maxLines = 1)
+                                                    val counts = u.counts ?: emptyMap()
+                                                    speciesIds.forEach { sid ->
+                                                        val v = counts[sid.toString()] ?: 0
+                                                        Text(
+                                                            v.toString(),
+                                                            modifier = Modifier.width(82.dp),
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Black,
+                                                            color = Color(0xFF00897B),
+                                                            textAlign = TextAlign.Center
+                                                        )
+                                                    }
+                                                }
+                                                HorizontalDivider(color = Color(0xFFF1F3F5))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            val lp = selectedBote?.lpMuestras ?: emptyMap()
+                            val rows = remember(lp, especiesMaestras.size) {
+                                val out = mutableListOf<Triple<String, String, String>>()
+                                lp.forEach { (spId, buckets) ->
+                                    val sid = spId.toIntOrNull()
+                                    val spName = if (sid != null) (especiesById[sid]?.com ?: "ID$sid") else spId
+                                    buckets.forEach { (kind, ms) ->
+                                        ms.forEach { m ->
+                                            val s = when (kind.uppercase()) {
+                                                "LP" -> "L=${m.l ?: "—"} · P=${m.p ?: "—"}"
+                                                "D" -> "D=${m.d ?: "—"}"
+                                                else -> "L=${m.l ?: "—"}"
+                                            }
+                                            out.add(Triple(spName, kind.uppercase(), s))
+                                        }
+                                    }
+                                }
+                                out
+                            }
+
+                            Surface(
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color.White,
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                            ) {
+                                if (rows.isEmpty()) {
+                                    Box(Modifier.fillMaxSize().padding(18.dp), contentAlignment = Alignment.Center) {
+                                        Text("Sin muestras L-P registradas", color = Color.Gray)
+                                    }
+                                } else {
+                                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                        item {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(Color(0xFFF1F3F5))
+                                                    .padding(vertical = 10.dp, horizontal = 12.dp)
+                                            ) {
+                                                Text("ESPECIE", modifier = Modifier.weight(1.4f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                                                Text("TIPO", modifier = Modifier.weight(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                                                Text("VALORES", modifier = Modifier.weight(1.4f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                                            }
+                                        }
+                                        items(rows) { (esp, kind, vals) ->
+                                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 12.dp)) {
+                                                Text(esp, modifier = Modifier.weight(1.4f), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
+                                                Text(kind, modifier = Modifier.weight(0.6f), fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF00897B), textAlign = TextAlign.Center)
+                                                Text(vals, modifier = Modifier.weight(1.4f), fontSize = 12.sp, color = Color.Gray)
+                                            }
+                                            HorizontalDivider(color = Color(0xFFF1F3F5))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(999.dp),
+                    border = BorderStroke(1.5.dp, Color.Gray)
+                ) { Text("CERRAR", fontWeight = FontWeight.Bold, color = Color.Gray) }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

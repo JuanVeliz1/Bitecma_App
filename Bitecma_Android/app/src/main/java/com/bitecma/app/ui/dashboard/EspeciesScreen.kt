@@ -7,7 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +24,7 @@ import com.bitecma.app.network.RetrofitClient
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun EspeciesScreen(navController: NavController, userId: Int) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedEspecie by remember { mutableStateOf<EspecieMaestra?>(null) }
@@ -80,7 +81,7 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
                 title = { Text("Maestro de Especies", color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -131,7 +132,7 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
                             Text(esp.nombreComun, modifier = Modifier.weight(1.5f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             Text(esp.nombreCientifico, modifier = Modifier.weight(2f), fontSize = 11.sp, color = Color.Gray, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                         }
-                        Divider(color = Color(0xFFEEEEEE))
+                        HorizontalDivider(color = Color(0xFFEEEEEE))
                     }
                 }
             }

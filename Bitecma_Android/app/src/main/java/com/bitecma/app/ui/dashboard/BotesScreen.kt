@@ -1,13 +1,15 @@
 package com.bitecma.app.ui.dashboard
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,20 +25,16 @@ import com.bitecma.app.network.RetrofitClient
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun BotesScreen(navController: NavController, userId: Int) {
     var searchQuery by remember { mutableStateOf("") }
-    val regionesLabels = listOf(
-        "I — Tarapacá", "II — Antofagasta", "III — Atacama", "IV — Coquimbo", 
-        "V — Valparaíso", "VI — O'Higgins", "VII — Maule", "VIII — Biobío",
-        "IX — La Araucanía", "X — Los Lagos", "XI — Aysén", "XII — Magallanes",
-        "XIV — Los Ríos", "XV — Arica y Parinacota", "XVI — Ñuble"
-    )
-    
-    var selectedRegion by remember { mutableStateOf("I — Tarapacá") }
-    var selectedBote by remember { mutableStateOf<BoteMaestro?>(null) }
-    
+    var selectedRegionRom by remember { mutableStateOf<String?>(null) }
+    var regionDropdownExpanded by remember { mutableStateOf(false) }
+
     var botesData by remember { mutableStateOf<List<BoteMaestro>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var romToLabel by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var regionOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
 
     LaunchedEffect(isLoading) {
         if (!isLoading) return@LaunchedEffect
@@ -47,7 +45,7 @@ fun BotesScreen(navController: NavController, userId: Int) {
         try {
             // 1. Obtener Regiones para mapeo dinámico
             val regRes = RetrofitClient.apiService.getRegiones()
-            val romToLabel = if (regRes.isSuccessful && regRes.body()?.ok == true) {
+            val fetchedRomToLabel = if (regRes.isSuccessful && regRes.body()?.ok == true) {
                 (regRes.body()?.data ?: emptyList()).associate { r ->
                     val label = listOfNotNull(r.rom, r.nom).joinToString(" — ").ifBlank { r.rom ?: "Región ${r.id}" }
                     (r.rom ?: "") to label
@@ -55,6 +53,10 @@ fun BotesScreen(navController: NavController, userId: Int) {
             } else {
                 emptyMap()
             }
+            romToLabel = fetchedRomToLabel.filterKeys { it.isNotBlank() }
+            regionOptions = romToLabel.entries
+                .map { it.key to it.value }
+                .sortedWith(compareBy({ it.first.length }, { it.first }, { it.second }))
 
             // 2. Obtener Botes desde la API/Base de Datos
             val bRes = RetrofitClient.apiService.getBotes()
@@ -62,10 +64,7 @@ fun BotesScreen(navController: NavController, userId: Int) {
                 val items = bRes.body()?.data ?: emptyList()
                 val mapped = items.mapNotNull { b ->
                     val rom = b.region_rom ?: b.region
-                    // Mapear el rom de la API al label que usamos en el sidebar
-                    val regionLabel = if (rom != null) {
-                        romToLabel[rom] ?: regionesLabels.find { it.startsWith("$rom —") || it == rom } ?: rom
-                    } else ""
+                    val regionLabel = if (rom != null) fetchedRomToLabel[rom] ?: rom else ""
                     
                     val nombre = b.nombre ?: return@mapNotNull null
                     BoteMaestro(
@@ -90,31 +89,50 @@ fun BotesScreen(navController: NavController, userId: Int) {
         }
     }
 
-    val filteredBotes = botesData.filter { 
-        it.regionId == selectedRegion && 
-        (it.nombre.contains(searchQuery, ignoreCase = true) || 
-         it.rpa.contains(searchQuery) || 
-         it.matricula.contains(searchQuery))
+    data class BoteUi(
+        val regionRom: String,
+        val regionLabel: String,
+        val nombre: String,
+        val rpa: String,
+        val matricula: String
+    )
+
+    fun inferRegionRom(label: String): String {
+        val first = label.split("—").firstOrNull()?.trim().orEmpty()
+        return if (first.isNotBlank()) first else label.trim().ifBlank { "?" }
     }
 
-    if (selectedBote != null) {
-        AlertDialog(
-            onDismissRequest = { selectedBote = null },
-            title = { Text(selectedBote!!.nombre, fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    DetailRow("Caleta:", selectedBote!!.caleta)
-                    DetailRow("RPA:", selectedBote!!.rpa)
-                    DetailRow("Matrícula:", selectedBote!!.matricula)
-                    DetailRow("Región:", selectedBote!!.regionId)
-                }
-            },
-            confirmButton = {
-                Button(onClick = { selectedBote = null }) {
-                    Text("Cerrar")
-                }
+    val botesUi by remember(botesData) {
+        mutableStateOf(
+            botesData.map { b ->
+                val regionLabel = b.regionId.ifBlank { "?" }
+                val rom = inferRegionRom(regionLabel).uppercase()
+                BoteUi(
+                    regionRom = rom,
+                    regionLabel = regionLabel,
+                    nombre = b.nombre,
+                    rpa = b.rpa,
+                    matricula = b.matricula
+                )
             }
         )
+    }
+
+    val filtered = remember(botesUi, searchQuery, selectedRegionRom) {
+        val q = searchQuery.trim().lowercase()
+        botesUi
+            .asSequence()
+            .filter { b -> selectedRegionRom == null || b.regionRom.equals(selectedRegionRom, true) }
+            .filter { b ->
+                if (q.isBlank()) true
+                else {
+                b.nombre.lowercase().contains(q) ||
+                    b.rpa.lowercase().contains(q) ||
+                    b.matricula.lowercase().contains(q)
+                }
+            }
+            .sortedBy { it.nombre.lowercase() }
+            .toList()
     }
 
     Scaffold(
@@ -123,7 +141,7 @@ fun BotesScreen(navController: NavController, userId: Int) {
                 title = { Text("Botes", color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
                     }
                 },
                 actions = {
@@ -131,6 +149,7 @@ fun BotesScreen(navController: NavController, userId: Int) {
                         // Forzar refresco
                         isLoading = true
                         searchQuery = "" // Limpiar búsqueda al refrescar
+                        selectedRegionRom = null
                     }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refrescar", tint = Color.White)
                     }
@@ -139,92 +158,105 @@ fun BotesScreen(navController: NavController, userId: Int) {
             )
         }
     ) { padding ->
-        Row(modifier = Modifier.fillMaxSize().padding(padding)) {
-            // Sidebar de Regiones
-            Column(
-                modifier = Modifier
-                    .width(180.dp)
-                    .fillMaxHeight()
-                    .background(Color(0xFFF8F9FA))
-                    .padding(8.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(MaterialTheme.colorScheme.background)
+                .padding(16.dp)
+        ) {
+            ExposedDropdownMenuBox(
+                expanded = regionDropdownExpanded,
+                onExpandedChange = { regionDropdownExpanded = !regionDropdownExpanded }
             ) {
-                LazyColumn {
-                    items(regionesLabels) { region ->
-                        val isSelected = region == selectedRegion
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp)
-                                .clickable { selectedRegion = region },
-                            color = if (isSelected) Color(0xFFE0F2F1) else Color.Transparent,
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = region,
-                                modifier = Modifier.padding(12.dp),
-                                fontSize = 12.sp,
-                                color = if (isSelected) Color(0xFF00897B) else Color.DarkGray,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
+                OutlinedTextField(
+                    value = selectedRegionRom?.let { romToLabel[it] ?: it } ?: "Todas las regiones",
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    label = { Text("Región") },
+                    shape = RoundedCornerShape(12.dp)
+                )
+                ExposedDropdownMenu(
+                    expanded = regionDropdownExpanded,
+                    onDismissRequest = { regionDropdownExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Todas las regiones") },
+                        onClick = {
+                            selectedRegionRom = null
+                            regionDropdownExpanded = false
                         }
+                    )
+                    regionOptions.forEach { (rom, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                selectedRegionRom = rom
+                                regionDropdownExpanded = false
+                            }
+                        )
                     }
                 }
             }
 
-            // Contenido Principal
-            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Buscar por nombre, RPA o matrícula...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    shape = RoundedCornerShape(12.dp)
-                )
+            Spacer(modifier = Modifier.height(10.dp))
 
-                Spacer(modifier = Modifier.height(16.dp))
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Buscar por nombre, RPA o matrícula...") },
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                shape = RoundedCornerShape(12.dp)
+            )
 
-                // Cabecera de Tabla
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFFF1F3F4), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                        .padding(12.dp)
-                ) {
-                    Text("NOMBRE", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                    Text("CALETA", modifier = Modifier.weight(1.2f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                    Text("RPA", modifier = Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                    Text("MATRÍCULA", modifier = Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                }
+            Spacer(modifier = Modifier.height(12.dp))
 
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(filteredBotes) { bote ->
-                        Column {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { selectedBote = bote }
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(bote.nombre, modifier = Modifier.weight(1.5f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                                Text(bote.caleta, modifier = Modifier.weight(1.2f), fontSize = 11.sp)
-                                Text(bote.rpa, modifier = Modifier.weight(1f), fontSize = 11.sp)
-                                Text(bote.matricula, modifier = Modifier.weight(1f), fontSize = 11.sp)
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                shape = RoundedCornerShape(14.dp),
+                color = Color.White,
+                border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+            ) {
+                LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                    if (isLoading) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
                             }
-                            Divider(color = Color(0xFFEEEEEE))
+                        }
+                    } else {
+                        if (filtered.isEmpty()) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                    Text("Sin resultados", color = Color.Gray)
+                                }
+                            }
+                        } else {
+                            items(filtered) { b ->
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    color = Color.White,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                                ) {
+                                    Text(
+                                        text = b.nombre,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF003366),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-fun DetailRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(text = label, fontWeight = FontWeight.Bold, modifier = Modifier.width(100.dp), fontSize = 14.sp)
-        Text(text = value, fontSize = 14.sp)
     }
 }

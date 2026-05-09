@@ -27,7 +27,7 @@ object ExcelExporter {
 
         val row2 = sheet.createRow(rowIdx++)
         row2.createCell(0).apply { setCellValue("Sector:"); cellStyle = headerStyle }
-        row2.createCell(1).setCellValue(operacion.sector ?: "")
+        row2.createCell(1).setCellValue(operacion.sector)
 
         val row3 = sheet.createRow(rowIdx++)
         row3.createCell(0).apply { setCellValue("Organización:"); cellStyle = headerStyle }

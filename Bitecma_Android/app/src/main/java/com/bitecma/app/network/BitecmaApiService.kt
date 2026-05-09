@@ -9,6 +9,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.PUT
 import retrofit2.http.Query
 
 data class ApiEnvelope<T>(
@@ -98,6 +99,9 @@ interface BitecmaApiService {
     @POST("operaciones")
     suspend fun crearOperacion(@Body operacion: OperacionUpsertRequest): Response<ApiEnvelope<OperacionDto>>
 
+    @PUT("operaciones/{id}")
+    suspend fun actualizarOperacion(@Path("id") id: String, @Body operacion: OperacionUpsertRequest): Response<ApiEnvelope<OperacionDto>>
+
     @retrofit2.http.DELETE("operaciones/{id}")
     suspend fun eliminarOperacion(@Path("id") id: String): Response<ApiEnvelope<Boolean>>
 
@@ -113,13 +117,13 @@ interface BitecmaApiService {
     @GET("especies")
     suspend fun getEspecies(): Response<ApiEnvelope<List<EspecieDto>>>
 
-    @GET("sectores-amerb")
+    @GET("sectores")
     suspend fun getSectoresAmerb(): Response<ApiEnvelope<List<SectorAmerbDto>>>
 
     @GET("caletas")
     suspend fun getCaletas(): Response<ApiEnvelope<List<CaletaDto>>>
 
-    @GET("opas")
+    @GET("organizaciones")
     suspend fun getOpas(): Response<ApiEnvelope<List<OpaDto>>>
 
     @GET("files")
