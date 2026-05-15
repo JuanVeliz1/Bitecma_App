@@ -30,9 +30,31 @@ data class AuthLoginRequest(
 
 data class AuthUser(
     val uid: Int? = null,
+    val id: Int? = null,
     val correo: String? = null,
+    val email: String? = null,
     val nombre: String? = null,
-    val rol: String? = null
+    val numero: String? = null,
+    val rol: String? = null,
+    val activo: Boolean? = null,
+    val avatar_url: String? = null
+)
+
+data class EvaluacionDto(
+    val id: String,
+    val region: Int? = null,
+    val sector: String,
+    val sectorAmerbId: Int? = null,
+    val sectorAmerb: String? = null,
+    val tipoOrg: String? = null,
+    val opaId: Int? = null,
+    val orgNombre: String? = null,
+    val numSegEsba: Int? = null,
+    val fechaInicio: String? = null,
+    val fechaFin: String? = null,
+    val createdBy: Int? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null
 )
 
 data class AuthLoginResponse(
@@ -71,19 +93,23 @@ data class EspecieDto(
 data class SectorAmerbDto(
     val id: Int,
     val nombre: String,
-    val region: Int? = null
+    val region: Int? = null,
+    val comuna: String? = null
 )
 
 data class CaletaDto(
     val id: Int? = null,
     val nombre: String,
-    val region: Int? = null
+    val region: Int? = null,
+    val sectorAmerbId: Int? = null
 )
 
 data class OpaDto(
     val id: Int,
     val nombre: String,
-    val region: Int? = null
+    val nombrecorto: String? = null,
+    val region: Int? = null,
+    val comuna: String? = null
 )
 
 interface BitecmaApiService {
@@ -107,6 +133,36 @@ interface BitecmaApiService {
 
     @POST("auth/login")
     suspend fun login(@Body request: AuthLoginRequest): Response<AuthLoginResponse>
+
+    @GET("auth/me")
+    suspend fun getMe(): Response<AuthLoginResponse>
+
+    @GET("usuarios")
+    suspend fun getUsuarios(): Response<ApiEnvelope<List<AuthUser>>>
+
+    @POST("usuarios")
+    suspend fun crearUsuario(@Body usuario: AuthUser): Response<ApiEnvelope<AuthUser>>
+
+    @PUT("usuarios/{id}")
+    suspend fun actualizarUsuario(@Path("id") id: Int, @Body usuario: AuthUser): Response<ApiEnvelope<AuthUser>>
+
+    @retrofit2.http.DELETE("usuarios/{id}")
+    suspend fun eliminarUsuario(@Path("id") id: Int): Response<ApiEnvelope<Boolean>>
+
+    @GET("evaluaciones")
+    suspend fun getEvaluaciones(): Response<ApiEnvelope<List<EvaluacionDto>>>
+
+    @GET("evaluaciones/{id}")
+    suspend fun getEvaluacion(@Path("id") id: String): Response<ApiEnvelope<EvaluacionDto>>
+
+    @POST("evaluaciones")
+    suspend fun crearEvaluacion(@Body evaluacion: EvaluacionDto): Response<ApiEnvelope<EvaluacionDto>>
+
+    @PUT("evaluaciones/{id}")
+    suspend fun actualizarEvaluacion(@Path("id") id: String, @Body evaluacion: EvaluacionDto): Response<ApiEnvelope<EvaluacionDto>>
+
+    @retrofit2.http.DELETE("evaluaciones/{id}")
+    suspend fun eliminarEvaluacion(@Path("id") id: String): Response<ApiEnvelope<Boolean>>
 
     @GET("regiones")
     suspend fun getRegiones(): Response<ApiEnvelope<List<RegionDto>>>

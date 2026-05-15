@@ -772,20 +772,50 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Text("CALETA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                        val filteredCaletas = if (caletasApi.isNotEmpty()) {
-                            caletasApi.filter { it.region == selectedRegionId }.map { it.nombre }
-                        } else {
-                            OperacionData.caletasByRegion[selectedRegionId] ?: emptyList()
+                        val filteredCaletas = remember(caletasApi, selectedRegionId, selectedSectorAmerb) {
+                            // 1. Intentar filtrar por Sector AMERB si hay uno seleccionado y la API tiene datos
+                            var result = if (selectedSectorAmerb != null && caletasApi.isNotEmpty()) {
+                                caletasApi.filter { it.region == selectedRegionId && it.sectorAmerbId == selectedSectorAmerb?.id }
+                            } else {
+                                emptyList()
+                            }
+
+                            // 2. Si no hay resultados por sector o no hay sector seleccionado, filtrar por Región (API)
+                            if (result.isEmpty() && caletasApi.isNotEmpty()) {
+                                result = caletasApi.filter { it.region == selectedRegionId }
+                            }
+
+                            // 3. Si la API sigue sin dar resultados para la región, usar los datos locales (fallback)
+                            if (result.isEmpty()) {
+                                (OperacionData.caletasByRegion[selectedRegionId] ?: emptyList()).map { 
+                                    CaletaDto(id = 0, nombre = it, region = selectedRegionId ?: 0) 
+                                }
+                            } else {
+                                result
+                            }
                         }
                         SearchableDropdown(
                             value = caletaInput,
                             onValueChange = { caletaInput = it },
-                            placeholder = if (filteredCaletas.isEmpty()) "Sin caletas en esta región" else "Buscar caleta...",
+                            placeholder = if (filteredCaletas.isEmpty()) "Sin caletas disponibles" else "Buscar caleta...",
                             items = filteredCaletas,
-                            itemLabel = { it },
-                            onItemSelected = { selectedCaleta = it; caletaInput = it },
+                            itemLabel = { it.nombre },
+                            onItemSelected = { selectedCaleta = it.nombre; caletaInput = it.nombre },
                             showAddNew = true
                         )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Actualización dinámica de botes según caleta
+                        LaunchedEffect(selectedCaleta) {
+                            if (!selectedCaleta.isNullOrBlank()) {
+                                // Filtrar botes maestros que pertenezcan a la caleta seleccionada
+                                val botesDeCaleta = botesMaestros.filter { 
+                                    it.caleta.equals(selectedCaleta, ignoreCase = true) 
+                                }
+                                // Aquí podrías actualizar una lista de botes si fuera necesario para la UI
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(24.dp))
                         HorizontalDivider(color = Color(0xFFF1F3F5))
@@ -820,7 +850,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         val filteredOpas = if (opasApi.isNotEmpty()) {
                             opasApi.filter { it.region == selectedRegionId }
                         } else {
-                            OperacionData.opas.filter { it.region == selectedRegionId }.map { OpaDto(it.id, it.nombre, it.region) }
+                            OperacionData.opas.filter { it.region == selectedRegionId }.map { OpaDto(it.id, it.nombre, region = it.region) }
                         }
                         SearchableDropdown(
                             value = opaInput,
@@ -909,6 +939,19 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         }
 
                         showAddDialog = false
+                        // Reset de campos para la próxima creación
+                        selectedRegionId = null
+                        sectorAmerbInput = ""
+                        selectedSectorAmerb = null
+                        numSeguimiento = ""
+                        fechaInicio = ""
+                        fechaFin = ""
+                        caletaInput = ""
+                        selectedCaleta = ""
+                        tipoOrg = "STI"
+                        opaInput = ""
+                        selectedOpa = null
+
                         currentOpForBotes = finalOp
                         botesList.clear()
                         botesList.add(OperacionBoteDto(zona = 1, densTipo = "Transecto"))
@@ -1283,14 +1326,34 @@ private fun OperacionCard(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         val titulo = listOfNotNull(
-                            (op.sectorAmerb?.takeIf { it.isNotBlank() } ?: op.sector.takeIf { it.isNotBlank() }),
-                            op.numSeg?.toString()?.takeIf { it.isNotBlank() },
-                            op.fechaInicio?.takeIf { it.isNotBlank() }
+                            (op.sectorAmerb?.takeIf { it.isNotBlank() && it != "0000-00-00" } ?: op.sector.takeIf { it.isNotBlank() && it != "0000-00-00" }),
                         ).joinToString(" · ")
                         Text(titulo, fontWeight = FontWeight.ExtraBold, color = Color(0xFF003366), fontSize = 15.sp)
                     }
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text(op.id, fontSize = 12.sp, color = Color.Gray)
+                    // Formato: N° Seguimiento · Fecha Inicio [· Fecha Fin si es distinta]
+                    val subtitulo = buildString {
+                        append(op.id) // El ID autogenerado tipo OP-2026-22
+                        
+                        val nSeg = op.numSeg?.toString()
+                        if (!nSeg.isNullOrBlank() && nSeg != "0") {
+                            append(" · ")
+                            append(nSeg)
+                        }
+
+                        val fInicio = op.fechaInicio
+                        if (!fInicio.isNullOrBlank() && fInicio != "0000-00-00") {
+                            append(" · ")
+                            append(fInicio)
+                        }
+
+                        val fFin = op.fechaFin
+                        if (!fFin.isNullOrBlank() && fFin != "0000-00-00" && fFin != fInicio) {
+                            append(" - ")
+                            append(fFin)
+                        }
+                    }
+                    Text(subtitulo, fontSize = 12.sp, color = Color.Gray)
                 }
                 Row {
                     if (item.source == OperacionSource.LC && AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
@@ -1636,20 +1699,13 @@ fun BoteMaestroSearchDialog(
     var query by remember { mutableStateOf("") }
     
     // Estado para menús abatibles (jerarquía)
-    var expandedRegionRom by remember { mutableStateOf<String?>(null) }
-    var expandedCaleta by remember { mutableStateOf<String?>(null) }
+    var expandedRegionRom by remember { mutableStateOf<String?>(operationRegionRom) }
+    var expandedCaleta by remember { mutableStateOf<String?>(operationCaleta) }
 
     val fixedRom = operationRegionRom?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
     val fixedCaleta = operationCaleta?.trim()?.takeIf { it.isNotBlank() }
 
-    val baseBotes = remember(botes, fixedRom, fixedCaleta) {
-        botes.filter { b ->
-            val rom = (b.region_rom ?: b.region)?.trim()?.uppercase()
-            val cal = b.caleta?.trim()
-            (fixedRom == null || (rom != null && rom == fixedRom)) &&
-                (fixedCaleta == null || (cal != null && cal.equals(fixedCaleta, ignoreCase = true)))
-        }
-    }
+    val baseBotes = remember(botes) { botes }
 
     val queryFilteredBotes = baseBotes.filter { b ->
         (b.nombre ?: "").contains(query, true) ||
@@ -1691,38 +1747,32 @@ fun BoteMaestroSearchDialog(
                     LazyColumn(modifier = Modifier.weight(1f)) {
                         if (query.isEmpty()) {
                             // Mostrar Jerarquía: Región > Caleta > Bote
-                            val regions = if (fixedRom != null) listOf(fixedRom) else {
-                                baseBotes.mapNotNull { it.region_rom ?: it.region }.distinct().sorted()
-                            }
+                            val regions = baseBotes.mapNotNull { it.region_rom ?: it.region }.distinct().sorted()
                             
                             items(regions) { rom ->
-                                val isRegionExpanded = fixedRom != null || expandedRegionRom == rom
+                                val isRegionExpanded = expandedRegionRom == rom
                                 HierarchicalItem(
                                     label = "REGIÓN $rom",
                                     isExpanded = isRegionExpanded,
                                     onClick = { 
-                                        if (fixedRom == null) {
-                                            expandedRegionRom = if (isRegionExpanded) null else rom
-                                            expandedCaleta = null
-                                        }
+                                        expandedRegionRom = if (isRegionExpanded) null else rom
+                                        expandedCaleta = null
                                     },
                                     level = 0
                                 )
                                 
                                 if (isRegionExpanded) {
-                                    val caletas = if (fixedCaleta != null) listOf(fixedCaleta) else {
-                                        baseBotes.filter { (it.region_rom ?: it.region) == rom }
+                                    val caletas = baseBotes.filter { (it.region_rom ?: it.region) == rom }
                                             .mapNotNull { it.caleta }
                                             .distinct()
                                             .sorted()
-                                    }
                                     
                                     caletas.forEach { caleta ->
-                                        val isCaletaExpanded = fixedCaleta != null || expandedCaleta == caleta
+                                        val isCaletaExpanded = expandedCaleta?.equals(caleta, ignoreCase = true) == true
                                         HierarchicalItem(
                                             label = caleta.uppercase(),
                                             isExpanded = isCaletaExpanded,
-                                            onClick = { if (fixedCaleta == null) expandedCaleta = if (isCaletaExpanded) null else caleta },
+                                            onClick = { expandedCaleta = if (isCaletaExpanded) null else caleta },
                                             level = 1
                                         )
                                         

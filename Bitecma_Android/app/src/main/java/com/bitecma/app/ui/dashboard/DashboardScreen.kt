@@ -144,7 +144,6 @@ fun DashboardScreen(
                     onClick = { scope.launch { drawerState.close() }; navController.navigate("botes/$userId") },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 )
-
                 Spacer(modifier = Modifier.weight(1f))
                 
                 // Indicador de Estado de Conexión (Online/Offline)

@@ -132,6 +132,10 @@ if ($resource === 'sectores') {
     require __DIR__ . '/controllers/SectorController.php';
 }
 
+if ($resource === 'caletas') {
+    require __DIR__ . '/controllers/CaletaController.php';
+}
+
 if ($resource === 'botes') {
     require __DIR__ . '/controllers/BoteController.php';
 }
