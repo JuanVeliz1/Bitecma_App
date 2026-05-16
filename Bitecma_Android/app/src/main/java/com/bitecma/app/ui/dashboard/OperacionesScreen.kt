@@ -1,11 +1,11 @@
 package com.bitecma.app.ui.dashboard
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import com.bitecma.app.network.*
 import com.bitecma.app.data.*
 import kotlinx.coroutines.launch
+import java.text.Normalizer
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -48,7 +49,7 @@ private data class OperacionItem(
     val op: OperacionDto,
     val source: OperacionSource
 )
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun OperacionesScreen(navController: NavController, userId: Int) {
     val scope = rememberCoroutineScope()
@@ -63,12 +64,12 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     var currentBoteForData by remember { mutableStateOf<OperacionBoteDto?>(null) }
     val botesList = remember { mutableStateListOf<OperacionBoteDto>() }
     val selectedSpeciesIds = remember { mutableStateListOf<Int>() }
+    val muestreoBySpeciesId = remember { mutableStateMapOf<Int, Set<String>>() }
     val transectosList = remember { mutableStateListOf<DensidadUnidadDto>() }
     var especiesMaestras by remember { mutableStateOf<List<EspecieDto>>(emptyList()) }
     var botesMaestros by remember { mutableStateOf<List<BoteMaestroDto>>(emptyList()) }
     var regiones by remember { mutableStateOf<List<RegionDto>>(emptyList()) }
     var regionLabelById by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
-    
     // Listas dinámicas desde API
     var sectoresAmerbApi by remember { mutableStateOf<List<SectorAmerbDto>>(emptyList()) }
     var caletasApi by remember { mutableStateOf<List<CaletaDto>>(emptyList()) }
@@ -86,10 +87,11 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     var fechaFin by remember { mutableStateOf("") }
     var showInicioDatePicker by remember { mutableStateOf(false) }
     var showFinDatePicker by remember { mutableStateOf(false) }
+    var validationError by remember { mutableStateOf<String?>(null) }
 
     val nomenclatura = remember(selectedRegionId, numSeguimiento) {
         val year = LocalDate.now().year
-        "OP-$year-${numSeguimiento.ifBlank { "XXX" }}"
+        "OP-$year-${numSeguimiento.ifEmpty { "XXX" }}"
     }
 
     val operacionesUi by remember {
@@ -100,7 +102,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     }
 
     // Carga inicial de datos
-    LaunchedEffect(isLoading) {
+    LaunchedEffect(isLoading, userId) {
         if (!isLoading) return@LaunchedEffect
         try {
             val regionesRes = RetrofitClient.apiService.getRegiones()
@@ -197,7 +199,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     .fillMaxHeight(0.9f)
                     .padding(vertical = 16.dp),
                 shape = RoundedCornerShape(20.dp),
-                color = Color.White,
+                color = if (isSystemInDarkTheme()) Color(0xFF111B2B) else Color.White,
                 tonalElevation = 8.dp
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -260,8 +262,12 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                                 onClick = { 
                                                     if (selectedSpeciesIds.contains(esp.id)) {
                                                         selectedSpeciesIds.remove(esp.id)
+                                                        muestreoBySpeciesId.remove(esp.id)
                                                     } else {
                                                         selectedSpeciesIds.add(esp.id)
+                                                        if (!muestreoBySpeciesId.containsKey(esp.id)) {
+                                                            muestreoBySpeciesId[esp.id] = setOf("L-P", "DENSIDAD")
+                                                        }
                                                     }
                                                 },
                                                 modifier = Modifier.weight(1f)
@@ -298,16 +304,28 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                             Text(esp.com, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
                                             Text(esp.sci ?: "", fontSize = 10.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = Color.Gray)
                                         }
-                                        Surface(
-                                            color = Color(0xFF00897B).copy(alpha = 0.1f),
-                                            shape = RoundedCornerShape(6.dp)
+                                        val sel = muestreoBySpeciesId[id] ?: setOf("L-P", "DENSIDAD")
+                                        FlowRow(
+                                            modifier = Modifier.padding(start = 12.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                            maxItemsInEachRow = 2
                                         ) {
-                                            Text(
-                                                "L-P / DENSIDAD", 
-                                                fontSize = 10.sp, 
-                                                fontWeight = FontWeight.Black, 
-                                                color = Color(0xFF00897B), 
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                            FilterChip(
+                                                selected = sel.contains("L-P"),
+                                                onClick = {
+                                                    val next = if (sel.contains("L-P")) sel - "L-P" else sel + "L-P"
+                                                    muestreoBySpeciesId[id] = next
+                                                },
+                                                label = { Text("L-P", fontSize = 10.sp, fontWeight = FontWeight.Black) }
+                                            )
+                                            FilterChip(
+                                                selected = sel.contains("DENSIDAD"),
+                                                onClick = {
+                                                    val next = if (sel.contains("DENSIDAD")) sel - "DENSIDAD" else sel + "DENSIDAD"
+                                                    muestreoBySpeciesId[id] = next
+                                                },
+                                                label = { Text("DENSIDAD", fontSize = 10.sp, fontWeight = FontWeight.Black) }
                                             )
                                         }
                                     }
@@ -367,7 +385,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     .fillMaxHeight(0.9f)
                     .padding(vertical = 16.dp),
                 shape = RoundedCornerShape(20.dp),
-                color = Color.White,
+                color = if (isSystemInDarkTheme()) Color(0xFF111B2B) else Color.White,
                 tonalElevation = 8.dp
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -465,14 +483,14 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = 12.dp, vertical = 8.dp),
-                                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
+                                        colors = CardDefaults.cardColors(containerColor = Color.White),
                                         border = BorderStroke(1.dp, Color(0xFFF1F3F5)),
                                         shape = RoundedCornerShape(14.dp)
                                     ) {
-                                        Column(modifier = Modifier.padding(12.dp)) {
+                                        Column(modifier = Modifier.padding(14.dp)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(
-                                                    "UNIDAD ${(t.num ?: (index + 1)).toString()}",
+                                                    "UNIDAD ${t.num ?: (index + 1)}",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Black,
                                                     color = Color(0xFF003366),
@@ -483,7 +501,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                                 }
                                             }
 
-                                            Spacer(Modifier.height(10.dp))
+                                            Spacer(Modifier.height(12.dp))
 
                                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                                 Column(modifier = Modifier.weight(1f)) {
@@ -525,10 +543,13 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                             Spacer(Modifier.height(8.dp))
 
                                             val currentCounts = t.counts ?: emptyMap()
-                                            if (selectedSpeciesIds.isEmpty()) {
+                                            val densidadSpeciesIds = remember(selectedSpeciesIds.toList(), muestreoBySpeciesId.toMap()) {
+                                                selectedSpeciesIds.filter { sid -> muestreoBySpeciesId[sid]?.contains("DENSIDAD") != false }
+                                            }
+                                            if (densidadSpeciesIds.isEmpty()) {
                                                 Text("No hay fauna seleccionada.", fontSize = 12.sp, color = Color.Gray)
                                             } else {
-                                                selectedSpeciesIds.forEach { sid ->
+                                                densidadSpeciesIds.forEach { sid ->
                                                     val esp = especiesMaestras.find { it.id == sid }
                                                     Row(
                                                         modifier = Modifier
@@ -552,7 +573,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                                                 transectosList[index] = t.copy(counts = newCounts)
                                                             },
                                                             modifier = Modifier
-                                                                .width(92.dp)
+                                                                .width(88.dp)
                                                                 .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(10.dp))
                                                                 .background(Color.White, RoundedCornerShape(10.dp))
                                                                 .padding(10.dp),
@@ -561,7 +582,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                                                         )
                                                     }
-                                                    HorizontalDivider(color = Color(0xFFF1F3F5))
+                                                    Spacer(Modifier.height(6.dp))
                                                 }
                                             }
                                         }
@@ -613,6 +634,48 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                 }
                                 
                                 showTransectDialog = false 
+
+                                scope.launch {
+                                    if (AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
+                                        try {
+                                            val updatedBotesApi = updatedBotes.map { b ->
+                                                val dens = if (b.densTipo.equals("Cuadrante", true) || b.densTipo.equals("cuadrante", true)) "cuadrante" else "transecto"
+                                                b.copy(
+                                                    densTipo = dens,
+                                                    transectos = b.transectos?.map { t ->
+                                                        t.copy(tipo = if (dens == "cuadrante") "cuadrante" else "transecto")
+                                                    }
+                                                )
+                                            }
+                                            val req = OperacionUpsertRequest(
+                                                id = currentOp.id,
+                                                region = currentOp.region,
+                                                sector = currentOp.sector,
+                                                sectorAmerbId = currentOp.sectorAmerbId,
+                                                sectorAmerb = currentOp.sectorAmerb,
+                                                tipoOrg = currentOp.tipoOrg,
+                                                opaId = currentOp.opaId,
+                                                org = currentOp.org,
+                                                numSeg = currentOp.numSeg,
+                                                fechaInicio = currentOp.fechaInicio,
+                                                fechaFin = currentOp.fechaFin,
+                                                botes = updatedBotesApi
+                                            )
+                                            val res = RetrofitClient.apiService.actualizarOperacion(currentOp.id, req)
+                                            if (res.isSuccessful && res.body()?.ok == true) {
+                                                val savedOp = res.body()!!.data!!
+                                                val finalSavedOp = if (savedOp.botes.isNullOrEmpty() && updatedBotes.isNotEmpty()) {
+                                                    savedOp.copy(botes = updatedBotes)
+                                                } else {
+                                                    savedOp
+                                                }
+                                                val idx = DataManager.operacionesBd.indexOfFirst { it.id == currentOp.id }
+                                                if (idx >= 0) DataManager.operacionesBd[idx] = finalSavedOp else DataManager.operacionesBd.add(0, finalSavedOp)
+                                                currentOpForBotes = finalSavedOp
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                                }
                             }, 
                             modifier = Modifier.weight(1f).height(52.dp),
                             shape = RoundedCornerShape(26.dp),
@@ -638,9 +701,17 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     .fillMaxHeight(0.9f)
                     .padding(vertical = 16.dp),
                 shape = RoundedCornerShape(20.dp),
-                color = Color.White,
+                color = if (isSystemInDarkTheme()) Color(0xFF111B2B) else Color.White,
                 tonalElevation = 12.dp
             ) {
+                val isDark = isSystemInDarkTheme()
+                // Colores para el ComboBox (un poco más oscuro que celeste pastel, con alto contraste)
+                val comboBg = if (isDark) Color(0xFF0D47A1) else Color.White
+                val comboText = if (isDark) Color.White else Color.Black
+                val comboBorder = if (isDark) Color(0xFF1976D2) else Color(0xFFF1F3F5)
+                val labelColor = if (isDark) Color(0xFFBBDEFB) else Color.Gray
+                val accentColor = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366)
+
                 Column(modifier = Modifier.fillMaxSize()) {
                     // Header con estilo web moderno
                     Box(
@@ -675,25 +746,30 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                             .padding(20.dp)
                     ) {
                         // Sección: Ubicación
-                        Text("UBICACIÓN Y SECTOR", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFF003366))
+                        Text("UBICACIÓN Y SECTOR", fontSize = 11.sp, fontWeight = FontWeight.Black, color = accentColor)
                         Spacer(Modifier.height(12.dp))
                         
-                        Text("REGIÓN", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Text("REGIÓN", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                         var expandedReg by remember { mutableStateOf(false) }
                         Box {
                             OutlinedButton(
                                 onClick = { expandedReg = true },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.5.dp, Color(0xFFF1F3F5))
+                                border = BorderStroke(1.5.dp, comboBorder),
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = comboBg)
                             ) {
-                                Text(selectedRegionId?.let { regionLabelById[it] } ?: "Seleccionar Región", color = Color.Black, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
-                                Icon(Icons.Default.ArrowDropDown, null, tint = Color.Gray)
+                                Text(selectedRegionId?.let { regionLabelById[it] } ?: "Seleccionar Región", color = comboText, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+                                Icon(Icons.Default.ArrowDropDown, null, tint = labelColor)
                             }
-                            DropdownMenu(expanded = expandedReg, onDismissRequest = { expandedReg = false }) {
+                            DropdownMenu(
+                                expanded = expandedReg, 
+                                onDismissRequest = { expandedReg = false },
+                                modifier = Modifier.background(comboBg)
+                            ) {
                                 regiones.forEach { r ->
                                     DropdownMenuItem(
-                                        text = { Text(listOfNotNull(r.rom, r.nom).joinToString(" — ")) },
+                                        text = { Text(listOfNotNull(r.rom, r.nom).joinToString(" — "), color = comboText) },
                                         onClick = { selectedRegionId = r.id; expandedReg = false }
                                     )
                                 }
@@ -702,7 +778,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Text("SECTOR AMERB", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Text("SECTOR AMERB", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                         val filteredSectores = if (sectoresAmerbApi.isNotEmpty()) {
                             sectoresAmerbApi.filter { it.region == selectedRegionId }
                         } else {
@@ -718,22 +794,31 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         )
 
                         Spacer(modifier = Modifier.height(24.dp))
-                        HorizontalDivider(color = Color(0xFFF1F3F5))
+                        HorizontalDivider(color = comboBorder)
                         Spacer(modifier = Modifier.height(24.dp))
 
                         // Sección: Identificación
-                        Text("IDENTIFICACIÓN", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFF003366))
+                        Text("IDENTIFICACIÓN", fontSize = 11.sp, fontWeight = FontWeight.Black, color = accentColor)
                         Spacer(Modifier.height(12.dp))
 
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Column(Modifier.weight(1f)) {
-                                Text("N° SEGUIMIENTO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                Text("N° SEGUIMIENTO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                                 OutlinedTextField(
                                     value = numSeguimiento,
-                                    onValueChange = { numSeguimiento = it },
-                                    modifier = Modifier.fillMaxWidth(),
+                                    onValueChange = { if (it.all { char -> char.isDigit() }) numSeguimiento = it },
+                                    modifier = Modifier.fillMaxWidth().background(comboBg, RoundedCornerShape(12.dp)),
                                     shape = RoundedCornerShape(12.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = Color(0xFFF1F3F5))
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    textStyle = TextStyle(color = comboText, fontSize = 14.sp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        unfocusedBorderColor = comboBorder,
+                                        focusedBorderColor = accentColor,
+                                        unfocusedTextColor = comboText,
+                                        focusedTextColor = comboText,
+                                        unfocusedContainerColor = comboBg,
+                                        focusedContainerColor = comboBg
+                                    )
                                 )
                             }
                         }
@@ -742,36 +827,76 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
 
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Column(Modifier.weight(1f)) {
-                                Text("FECHA INICIO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                Text("FECHA INICIO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                                 OutlinedTextField(
                                     value = fechaInicio,
                                     onValueChange = { },
                                     readOnly = true,
-                                    modifier = Modifier.fillMaxWidth().clickable { showInicioDatePicker = true },
-                                    enabled = false,
+                                    modifier = Modifier.fillMaxWidth().background(comboBg, RoundedCornerShape(12.dp)).clickable { showInicioDatePicker = true },
                                     shape = RoundedCornerShape(12.dp),
-                                    trailingIcon = { Icon(Icons.Default.CalendarToday, null, tint = Color(0xFF003366)) },
-                                    colors = OutlinedTextFieldDefaults.colors(disabledBorderColor = Color(0xFFF1F3F5), disabledTextColor = Color.Black)
+                                    textStyle = TextStyle(color = comboText, fontSize = 14.sp),
+                                    trailingIcon = { Icon(Icons.Default.CalendarToday, null, tint = accentColor) },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        unfocusedBorderColor = comboBorder,
+                                        focusedBorderColor = accentColor,
+                                        disabledBorderColor = comboBorder,
+                                        unfocusedTextColor = comboText,
+                                        focusedTextColor = comboText,
+                                        disabledTextColor = comboText,
+                                        unfocusedContainerColor = comboBg,
+                                        focusedContainerColor = comboBg,
+                                        disabledContainerColor = comboBg
+                                    ),
+                                    interactionSource = remember { MutableInteractionSource() }
+                                        .also { interactionSource ->
+                                            LaunchedEffect(interactionSource) {
+                                                interactionSource.interactions.collect {
+                                                    if (it is PressInteraction.Release) {
+                                                        showInicioDatePicker = true
+                                                    }
+                                                }
+                                            }
+                                        }
                                 )
                             }
                             Column(Modifier.weight(1f)) {
-                                Text("FECHA TÉRMINO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                Text("FECHA TÉRMINO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                                 OutlinedTextField(
                                     value = fechaFin,
                                     onValueChange = { },
                                     readOnly = true,
-                                    modifier = Modifier.fillMaxWidth().clickable { showFinDatePicker = true },
-                                    enabled = false,
+                                    modifier = Modifier.fillMaxWidth().background(comboBg, RoundedCornerShape(12.dp)).clickable { showFinDatePicker = true },
                                     shape = RoundedCornerShape(12.dp),
-                                    trailingIcon = { Icon(Icons.Default.CalendarToday, null, tint = Color(0xFF003366)) },
-                                    colors = OutlinedTextFieldDefaults.colors(disabledBorderColor = Color(0xFFF1F3F5), disabledTextColor = Color.Black)
+                                    textStyle = TextStyle(color = comboText, fontSize = 14.sp),
+                                    trailingIcon = { Icon(Icons.Default.CalendarToday, null, tint = accentColor) },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        unfocusedBorderColor = comboBorder,
+                                        focusedBorderColor = accentColor,
+                                        disabledBorderColor = comboBorder,
+                                        unfocusedTextColor = comboText,
+                                        focusedTextColor = comboText,
+                                        disabledTextColor = comboText,
+                                        unfocusedContainerColor = comboBg,
+                                        focusedContainerColor = comboBg,
+                                        disabledContainerColor = comboBg
+                                    ),
+                                    interactionSource = remember { MutableInteractionSource() }
+                                        .also { interactionSource ->
+                                            LaunchedEffect(interactionSource) {
+                                                interactionSource.interactions.collect {
+                                                    if (it is PressInteraction.Release) {
+                                                        showFinDatePicker = true
+                                                    }
+                                                }
+                                            }
+                                        }
                                 )
                             }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Text("CALETA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Text("CALETA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                         val filteredCaletas = remember(caletasApi, selectedRegionId, selectedSectorAmerb) {
                             // 1. Intentar filtrar por Sector AMERB si hay uno seleccionado y la API tiene datos
                             var result = if (selectedSectorAmerb != null && caletasApi.isNotEmpty()) {
@@ -809,44 +934,47 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         // Actualización dinámica de botes según caleta
                         LaunchedEffect(selectedCaleta) {
                             if (!selectedCaleta.isNullOrBlank()) {
-                                // Filtrar botes maestros que pertenezcan a la caleta seleccionada
-                                val botesDeCaleta = botesMaestros.filter { 
-                                    it.caleta.equals(selectedCaleta, ignoreCase = true) 
-                                }
-                                // Aquí podrías actualizar una lista de botes si fuera necesario para la UI
                             }
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
-                        HorizontalDivider(color = Color(0xFFF1F3F5))
+                        HorizontalDivider(color = comboBorder)
                         Spacer(modifier = Modifier.height(24.dp))
 
                         // Sección: Organización
-                        Text("ORGANIZACIÓN (OPA)", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFF003366))
+                        Text("ORGANIZACIÓN (OPA)", fontSize = 11.sp, fontWeight = FontWeight.Black, color = accentColor)
                         Spacer(Modifier.height(12.dp))
 
-                        Text("TIPO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Text("TIPO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                         var expandedTipo by remember { mutableStateOf(false) }
                         Box {
                             OutlinedButton(
                                 onClick = { expandedTipo = true },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().background(comboBg, RoundedCornerShape(12.dp)),
                                 shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.5.dp, Color(0xFFF1F3F5))
+                                border = BorderStroke(1.5.dp, comboBorder),
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = comboBg)
                             ) {
-                                Text(tipoOrg, color = Color.Black, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
-                                Icon(Icons.Default.ArrowDropDown, null, tint = Color.Gray)
+                                Text(tipoOrg, color = comboText, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+                                Icon(Icons.Default.ArrowDropDown, null, tint = labelColor)
                             }
-                            DropdownMenu(expanded = expandedTipo, onDismissRequest = { expandedTipo = false }) {
+                            DropdownMenu(
+                                expanded = expandedTipo, 
+                                onDismissRequest = { expandedTipo = false },
+                                modifier = Modifier.background(comboBg)
+                            ) {
                                 OperacionData.tiposOrganizacion.forEach { t ->
-                                    DropdownMenuItem(text = { Text(t) }, onClick = { tipoOrg = t; expandedTipo = false })
+                                    DropdownMenuItem(
+                                        text = { Text(t, color = comboText) }, 
+                                        onClick = { tipoOrg = t; expandedTipo = false }
+                                    )
                                 }
                             }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Text("NOMBRE OPA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Text("NOMBRE OPA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                         val filteredOpas = if (opasApi.isNotEmpty()) {
                             opasApi.filter { it.region == selectedRegionId }
                         } else {
@@ -861,6 +989,18 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                             onItemSelected = { selectedOpa = Opa(it.id, it.nombre, it.nombre, it.region ?: 0); opaInput = it.nombre },
                             showAddNew = true
                         )
+
+                        if (validationError != null) {
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                text = validationError!!,
+                                color = Color.Red,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
 
                     // Footer con botones robustos
@@ -871,14 +1011,39 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         OutlinedButton(
-                            onClick = { showAddDialog = false },
+                            onClick = { showAddDialog = false; validationError = null },
                             modifier = Modifier.weight(1f).height(52.dp),
                             shape = RoundedCornerShape(26.dp),
                             border = BorderStroke(1.5.dp, Color(0.6f, 0.6f, 0.6f))
-                        ) { Text("CANCELAR", fontWeight = FontWeight.Bold, color = Color.Gray) }
+                        ) { Text("CANCELAR", fontWeight = FontWeight.Bold, color = if (isDark) Color.LightGray else Color.Gray) }
                         
                         Button(
-                            onClick = { showConfirmDialog = true },
+                            onClick = {
+                                val error = when {
+                                    selectedRegionId == null -> "Debe seleccionar una región"
+                                    numSeguimiento.isBlank() -> "Debe ingresar el N° de seguimiento"
+                                    fechaInicio.isBlank() -> "Debe ingresar la fecha de inicio"
+                                    fechaFin.isBlank() -> "Debe ingresar la fecha de término"
+                                    else -> {
+                                        try {
+                                            val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+                                            val inicio = LocalDate.parse(fechaInicio, fmt)
+                                            val fin = LocalDate.parse(fechaFin, fmt)
+                                            if (fin.isBefore(inicio)) "La fecha de término no puede ser anterior a la de inicio"
+                                            else null
+                                        } catch (_: Exception) {
+                                            "Formato de fecha inválido"
+                                        }
+                                    }
+                                }
+
+                                if (error != null) {
+                                    validationError = error
+                                } else {
+                                    validationError = null
+                                    showConfirmDialog = true
+                                }
+                            },
                             modifier = Modifier.weight(1f).height(52.dp),
                             shape = RoundedCornerShape(26.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
@@ -977,7 +1142,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     .fillMaxHeight(0.9f)
                     .padding(vertical = 16.dp),
                 shape = RoundedCornerShape(20.dp),
-                color = Color.White,
+                color = if (isSystemInDarkTheme()) Color(0xFF111B2B) else Color.White,
                 tonalElevation = 12.dp
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -1051,6 +1216,18 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                         }
                                     }
                                 }
+                                if (validationError != null) {
+                                    item {
+                                        Text(
+                                            text = validationError!!,
+                                            color = Color.Red,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1077,7 +1254,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         Spacer(Modifier.weight(1f))
 
                         OutlinedButton(
-                            onClick = { showBotesDialog = false },
+                            onClick = { showBotesDialog = false; validationError = null },
                             modifier = Modifier.height(52.dp),
                             shape = RoundedCornerShape(26.dp),
                             border = BorderStroke(1.5.dp, Color.Gray)
@@ -1087,6 +1264,22 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                             onClick = { 
                                 val op = currentOpForBotes ?: return@Button
                                 val updatedBotesUi = botesList.toList()
+                                
+                                // Validación de botes
+                                if (updatedBotesUi.isEmpty()) {
+                                    validationError = "Debe agregar al menos un bote"
+                                    return@Button
+                                }
+                                if (updatedBotesUi.any { it.nombre.isNullOrBlank() }) {
+                                    validationError = "Todos los botes deben tener un nombre (Bote Maestro)"
+                                    return@Button
+                                }
+                                if (updatedBotesUi.any { it.buzo.isNullOrBlank() }) {
+                                    validationError = "Todos los botes deben tener asignado un buzo"
+                                    return@Button
+                                }
+                                
+                                validationError = null
                                 val localOp = op.copy(botes = updatedBotesUi)
                                 currentOpForBotes = localOp
                                 val idxBd = DataManager.operacionesBd.indexOfFirst { it.id == op.id }
@@ -1477,6 +1670,12 @@ fun <T> SearchableDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val filteredItems = items.filter { itemLabel(it).contains(value, ignoreCase = true) }
+    val isDark = isSystemInDarkTheme()
+    // Colores personalizados para mejor visibilidad y contraste (Azul profundo con texto blanco)
+    val bgColor = if (isDark) Color(0xFF0D47A1) else Color.White
+    val textColor = if (isDark) Color.White else Color.Black
+    val borderColor = if (isDark) Color(0xFF1976D2) else Color(0xFFF1F3F5)
+    val focusedColor = if (isDark) Color(0xFFBBDEFB) else Color(0xFF003366)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
@@ -1485,18 +1684,23 @@ fun <T> SearchableDropdown(
                 onValueChange(it)
                 expanded = true 
             }, 
-            placeholder = { Text(placeholder, fontSize = 13.sp, color = Color.Gray) }, 
-            modifier = Modifier.fillMaxWidth(), 
+            placeholder = { Text(placeholder, fontSize = 13.sp, color = if (isDark) Color.LightGray else Color.Gray) }, 
+            modifier = Modifier.fillMaxWidth().background(bgColor, RoundedCornerShape(12.dp)), 
             shape = RoundedCornerShape(12.dp), 
             singleLine = true,
+            textStyle = TextStyle(color = textColor, fontSize = 14.sp),
             trailingIcon = { 
                 IconButton(onClick = { expanded = !expanded }) { 
-                    Icon(if (expanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown, null, tint = Color(0xFF003366)) 
+                    Icon(if (expanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown, null, tint = focusedColor) 
                 } 
             },
             colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = Color(0xFFF1F3F5),
-                focusedBorderColor = Color(0xFF003366)
+                unfocusedBorderColor = borderColor,
+                focusedBorderColor = focusedColor,
+                unfocusedTextColor = textColor,
+                focusedTextColor = textColor,
+                unfocusedContainerColor = bgColor,
+                focusedContainerColor = bgColor
             )
         )
 
@@ -1507,9 +1711,9 @@ fun <T> SearchableDropdown(
                     .heightIn(max = 250.dp)
                     .padding(top = 4.dp),
                 shape = RoundedCornerShape(12.dp),
-                color = Color.White,
+                color = bgColor,
                 tonalElevation = 8.dp,
-                border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                border = BorderStroke(1.dp, borderColor)
             ) {
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     if (showAddNew && value.isNotBlank() && filteredItems.none { itemLabel(it).equals(value, true) }) {
@@ -1523,16 +1727,15 @@ fun <T> SearchableDropdown(
                                     }
                                 }, 
                                 onClick = { 
-                                    // Aquí se podría implementar la lógica de agregar nuevo
                                     expanded = false 
                                 }
                             )
-                            HorizontalDivider(color = Color(0xFFF1F3F5))
+                            HorizontalDivider(color = borderColor)
                         }
                     }
                     items(filteredItems) { item ->
                         DropdownMenuItem(
-                            text = { Text(itemLabel(item), fontSize = 14.sp) }, 
+                            text = { Text(itemLabel(item), fontSize = 14.sp, color = textColor) }, 
                             onClick = { 
                                 onItemSelected(item)
                                 expanded = false 
@@ -1559,13 +1762,19 @@ fun BoteRowItem(
     var nextUnitType by remember { mutableStateOf("") }
     var showBoteSearch by remember { mutableStateOf(false) }
 
+    val isDark = isSystemInDarkTheme()
+    val comboBg = if (isDark) Color(0xFF0D47A1) else Color.White
+    val comboText = if (isDark) Color.White else Color.Black
+    val comboBorder = if (isDark) Color(0xFF1976D2) else Color(0xFFF1F3F5)
+    val labelColor = if (isDark) Color(0xFFBBDEFB) else Color.Gray
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 12.dp, horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(index.toString(), Modifier.weight(0.3f), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+        Text(index.toString(), Modifier.weight(0.3f), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isDark) Color.LightGray else Color.Gray)
         
         // Zona Muestreo
         BasicTextField(
@@ -1574,10 +1783,10 @@ fun BoteRowItem(
             modifier = Modifier
                 .weight(0.8f)
                 .padding(horizontal = 4.dp)
-                .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(8.dp))
-                .background(Color.White, RoundedCornerShape(8.dp))
+                .border(1.5.dp, comboBorder, RoundedCornerShape(8.dp))
+                .background(comboBg, RoundedCornerShape(8.dp))
                 .padding(10.dp),
-            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold),
+            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, color = comboText),
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
         )
@@ -1588,8 +1797,8 @@ fun BoteRowItem(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { showBoteSearch = true }
-                    .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(8.dp))
-                    .background(Color.White, RoundedCornerShape(8.dp))
+                    .border(1.5.dp, comboBorder, RoundedCornerShape(8.dp))
+                    .background(comboBg, RoundedCornerShape(8.dp))
                     .padding(10.dp),
                 color = Color.Transparent
             ) {
@@ -1598,11 +1807,11 @@ fun BoteRowItem(
                         bote.nombre ?: "Seleccionar Bote", 
                         fontSize = 13.sp, 
                         fontWeight = if (bote.nombre != null) FontWeight.Bold else FontWeight.Normal,
-                        color = if (bote.nombre != null) Color.Black else Color.Gray,
+                        color = if (bote.nombre != null) comboText else labelColor,
                         maxLines = 1,
                         modifier = Modifier.weight(1f)
                     )
-                    Icon(Icons.Default.Search, null, tint = Color(0xFF003366), modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Search, null, tint = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366), modifier = Modifier.size(16.dp))
                 }
             }
             if (showBoteSearch) { 
@@ -1623,11 +1832,19 @@ fun BoteRowItem(
             modifier = Modifier
                 .weight(1.2f)
                 .padding(horizontal = 4.dp)
-                .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(8.dp))
-                .background(Color.White, RoundedCornerShape(8.dp))
+                .border(1.5.dp, comboBorder, RoundedCornerShape(8.dp))
+                .background(comboBg, RoundedCornerShape(8.dp))
                 .padding(10.dp),
-            textStyle = TextStyle(fontSize = 13.sp),
-            singleLine = true
+            textStyle = TextStyle(fontSize = 13.sp, color = comboText),
+            singleLine = true,
+            decorationBox = { innerTextField ->
+                Box {
+                    if (bote.buzo.isNullOrBlank()) {
+                        Text("Buzo...", color = labelColor, fontSize = 13.sp)
+                    }
+                    innerTextField()
+                }
+            }
         )
 
         // Unidad
@@ -1637,27 +1854,34 @@ fun BoteRowItem(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { expandedUni = true }
-                    .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(8.dp))
-                    .background(Color.White, RoundedCornerShape(8.dp))
+                    .border(1.5.dp, comboBorder, RoundedCornerShape(8.dp))
+                    .background(comboBg, RoundedCornerShape(8.dp))
                     .padding(10.dp),
                 color = Color.Transparent
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(bote.densTipo ?: "Unidad", fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ArrowDropDown, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                    Text(bote.densTipo ?: "Unidad", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = comboText, modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.ArrowDropDown, null, tint = labelColor, modifier = Modifier.size(16.dp))
                 }
             }
-            DropdownMenu(expanded = expandedUni, onDismissRequest = { expandedUni = false }) {
+            DropdownMenu(
+                expanded = expandedUni, 
+                onDismissRequest = { expandedUni = false },
+                modifier = Modifier.background(comboBg)
+            ) {
                 listOf("Transecto", "Cuadrante").forEach { u ->
-                    DropdownMenuItem(text = { Text(u, fontSize = 13.sp) }, onClick = { 
-                        if (bote.densTipo != u && !bote.transectos.isNullOrEmpty()) {
-                            nextUnitType = u
-                            showUnitWarning = true
-                        } else {
-                            onUpdate(bote.copy(densTipo = u))
+                    DropdownMenuItem(
+                        text = { Text(u, fontSize = 13.sp, color = comboText) }, 
+                        onClick = { 
+                            if (bote.densTipo != u && !bote.transectos.isNullOrEmpty()) {
+                                nextUnitType = u
+                                showUnitWarning = true
+                            } else {
+                                onUpdate(bote.copy(densTipo = u))
+                            }
+                            expandedUni = false 
                         }
-                        expandedUni = false 
-                    })
+                    )
                 }
             }
         }
@@ -1699,13 +1923,61 @@ fun BoteMaestroSearchDialog(
     var query by remember { mutableStateOf("") }
     
     // Estado para menús abatibles (jerarquía)
-    var expandedRegionRom by remember { mutableStateOf<String?>(operationRegionRom) }
-    var expandedCaleta by remember { mutableStateOf<String?>(operationCaleta) }
+    var expandedRegionRom by remember(operationRegionRom, operationCaleta) { mutableStateOf<String?>(null) }
+    var expandedCaleta by remember(operationCaleta) { mutableStateOf(operationCaleta) }
 
-    val fixedRom = operationRegionRom?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
-    val fixedCaleta = operationCaleta?.trim()?.takeIf { it.isNotBlank() }
+    fun normalizeRom(value: String?): String? {
+        val s = value?.trim()
+        if (s.isNullOrBlank()) return null
+        val left = s.split("—").firstOrNull()?.trim().orEmpty()
+        val token = left.split(" ").firstOrNull()?.trim().orEmpty()
+        return token.takeIf { it.isNotBlank() }
+    }
 
-    val baseBotes = remember(botes) { botes }
+    val opCaleta = operationCaleta?.trim().takeIf { !it.isNullOrBlank() }
+    val opRom = normalizeRom(operationRegionRom)
+    fun normalizeKey(value: String?): String? {
+        val raw = value?.trim()
+        if (raw.isNullOrBlank()) return null
+        val noParen = raw.replace(Regex("\\(.*?\\)"), " ")
+        val noMarks = Normalizer.normalize(noParen, Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+        val cleaned = noMarks
+            .uppercase()
+            .replace(Regex("[^A-Z0-9]+"), " ")
+            .trim()
+            .replace(Regex("\\s+"), " ")
+        return cleaned.takeIf { it.isNotBlank() }
+    }
+    val opCaletaKey = normalizeKey(opCaleta)
+
+    val baseBotes = remember(botes, opCaletaKey, opRom) {
+        var filtered = botes
+        if (opCaletaKey != null) {
+            filtered = filtered.filter { b ->
+                val bKey = normalizeKey(b.caleta)
+                bKey != null && (bKey == opCaletaKey || bKey.contains(opCaletaKey) || opCaletaKey.contains(bKey))
+            }
+        }
+        if (opRom != null) {
+            filtered = filtered.filter { b ->
+                val bRom = normalizeRom(b.region_rom ?: b.region)
+                bRom == null || bRom.equals(opRom, ignoreCase = true)
+            }
+        }
+        filtered
+    }
+
+    val regionKeys = remember(baseBotes) { baseBotes.mapNotNull { it.region_rom ?: it.region }.distinct().sorted() }
+    LaunchedEffect(regionKeys, opRom, operationRegionRom, opCaletaKey) {
+        if (expandedRegionRom == null) {
+            val byExact = operationRegionRom?.let { desired -> regionKeys.firstOrNull { it.equals(desired, ignoreCase = true) } }
+            val byRom = opRom?.let { desiredRom -> regionKeys.firstOrNull { normalizeRom(it)?.equals(desiredRom, ignoreCase = true) == true } }
+            expandedRegionRom = byExact ?: byRom ?: regionKeys.firstOrNull()
+        }
+        if (!opCaleta.isNullOrBlank()) {
+            expandedCaleta = opCaleta
+        }
+    }
 
     val queryFilteredBotes = baseBotes.filter { b ->
         (b.nombre ?: "").contains(query, true) ||
@@ -1713,19 +1985,26 @@ fun BoteMaestroSearchDialog(
             (b.nmatricula ?: "").contains(query, true)
     }
 
+    val isDark = isSystemInDarkTheme()
+    val bgColor = if (isDark) Color(0xFF111B2B) else Color.White
+    val headerBg = if (isDark) Color(0xFF0D47A1) else Color(0xFFF8F9FA)
+    val textColor = if (isDark) Color.White else Color.Black
+    val comboBg = if (isDark) Color(0xFF0D47A1) else Color.White
+    val comboBorder = if (isDark) Color(0xFF1976D2) else Color(0xFFF1F3F5)
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.9f),
             shape = RoundedCornerShape(20.dp),
-            color = Color.White
+            color = bgColor
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Box(
-                    modifier = Modifier.fillMaxWidth().background(Color(0xFFF8F9FA)).padding(16.dp)
+                    modifier = Modifier.fillMaxWidth().background(headerBg).padding(16.dp)
                 ) {
-                    Text("SELECCIONAR BOTE MAESTRO", fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color(0xFF003366))
+                    Text("SELECCIONAR BOTE MAESTRO", fontWeight = FontWeight.Black, fontSize = 16.sp, color = if (isDark) Color.White else Color(0xFF003366))
                     IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd).size(24.dp)) {
-                        Icon(Icons.Default.Close, null, tint = Color.Gray)
+                        Icon(Icons.Default.Close, null, tint = if (isDark) Color.LightGray else Color.Gray)
                     }
                 }
 
@@ -1733,21 +2012,42 @@ fun BoteMaestroSearchDialog(
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
-                        placeholder = { Text("Buscar por nombre, RPA o matrícula...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        leadingIcon = { Icon(Icons.Default.Search, null, tint = Color(0xFF003366)) },
+                        placeholder = { Text("Buscar por nombre, RPA o matrícula...", color = if (isDark) Color.LightGray else Color.Gray) },
+                        modifier = Modifier.fillMaxWidth().background(comboBg, RoundedCornerShape(12.dp)),
+                        leadingIcon = { Icon(Icons.Default.Search, null, tint = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366)) },
                         shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = Color(0xFFF1F3F5))
+                        textStyle = TextStyle(color = textColor),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = comboBorder,
+                            focusedBorderColor = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366),
+                            unfocusedContainerColor = comboBg,
+                            focusedContainerColor = comboBg
+                        )
                     )
                     
                     Spacer(Modifier.height(16.dp))
                     Text("JERARQUÍA: REGIÓN > CALETA > BOTE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.Gray, letterSpacing = 1.sp)
+                    if (!opCaleta.isNullOrBlank()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("Filtrado por caleta: ${opCaleta.uppercase()}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isDark) Color(0xFFBBDEFB) else Color(0xFF003366))
+                    }
                     Spacer(Modifier.height(8.dp))
 
                     LazyColumn(modifier = Modifier.weight(1f)) {
+                        if (baseBotes.isEmpty()) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = if (!opCaleta.isNullOrBlank()) "No hay botes para la caleta seleccionada" else "No hay botes disponibles",
+                                        color = Color.Gray,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
                         if (query.isEmpty()) {
                             // Mostrar Jerarquía: Región > Caleta > Bote
-                            val regions = baseBotes.mapNotNull { it.region_rom ?: it.region }.distinct().sorted()
+                            val regions = regionKeys
                             
                             items(regions) { rom ->
                                 val isRegionExpanded = expandedRegionRom == rom
@@ -1868,7 +2168,6 @@ private fun OperacionDataDialog(
     especiesMaestras: List<EspecieDto>,
     onDismiss: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
     var op by remember(opInitial.id) { mutableStateOf(opInitial) }
     var tab by remember { mutableStateOf("DENSIDAD") }
     var selectedBoteKey by remember { mutableStateOf<String?>(null) }
@@ -2200,5 +2499,5 @@ private fun OperacionDataDialog(
 @Composable
 fun MyDatePickerDialog(onDateSelected: (String) -> Unit, onDismiss: () -> Unit) {
     val datePickerState = rememberDatePickerState()
-    DatePickerDialog(onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = { datePickerState.selectedDateMillis?.let { val date = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate(); val fmt = DateTimeFormatter.ofPattern("dd-MM-yyyy"); onDateSelected(date.format(fmt)) }; onDismiss() }) { Text("OK") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }) { DatePicker(state = datePickerState) }
+    DatePickerDialog(onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = { datePickerState.selectedDateMillis?.let { val date = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate(); val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd"); onDateSelected(date.format(fmt)) }; onDismiss() }) { Text("OK") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }) { DatePicker(state = datePickerState) }
 }
