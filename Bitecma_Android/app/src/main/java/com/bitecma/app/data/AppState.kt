@@ -15,14 +15,18 @@ object AppState {
 
     var authToken by mutableStateOf<String?>(null)
 
+    var currentUserEmail by mutableStateOf<String?>(null)
     var currentUserName by mutableStateOf<String?>(null)
     var currentUserRole by mutableStateOf<String?>(null)
+    var forceOffline by mutableStateOf(false)
 
     private const val PREFS = "bitecma_prefs"
     private const val KEY_TOKEN = "auth_token"
     private const val KEY_UID = "auth_uid"
+    private const val KEY_EMAIL = "auth_email"
     private const val KEY_NAME = "auth_name"
     private const val KEY_ROLE = "auth_role"
+    private const val KEY_FORCE_OFFLINE = "force_offline"
 
     private fun lastLoginKey(email: String): String = "last_login_" + email.trim().lowercase()
 
@@ -31,8 +35,13 @@ object AppState {
         authToken = sp.getString(KEY_TOKEN, null)
         val uid = sp.getInt(KEY_UID, -1)
         currentUserId = if (uid > 0) uid else null
+        currentUserEmail = sp.getString(KEY_EMAIL, null)
         currentUserName = sp.getString(KEY_NAME, null)
         currentUserRole = sp.getString(KEY_ROLE, null)
+        forceOffline = sp.getBoolean(KEY_FORCE_OFFLINE, false)
+        if (!isBitecmaUser()) {
+            forceOffline = false
+        }
         isOnline = !authToken.isNullOrBlank()
     }
 
@@ -43,22 +52,41 @@ object AppState {
         if (token.isNullOrBlank()) ed.remove(KEY_TOKEN) else ed.putString(KEY_TOKEN, token)
         val uid = currentUserId
         if (uid == null || uid <= 0) ed.remove(KEY_UID) else ed.putInt(KEY_UID, uid)
+        val email = currentUserEmail
+        if (email.isNullOrBlank()) ed.remove(KEY_EMAIL) else ed.putString(KEY_EMAIL, email)
         val name = currentUserName
         if (name.isNullOrBlank()) ed.remove(KEY_NAME) else ed.putString(KEY_NAME, name)
         val role = currentUserRole
         if (role.isNullOrBlank()) ed.remove(KEY_ROLE) else ed.putString(KEY_ROLE, role)
+        if (isBitecmaUser()) {
+            ed.putBoolean(KEY_FORCE_OFFLINE, forceOffline)
+        } else {
+            forceOffline = false
+            ed.remove(KEY_FORCE_OFFLINE)
+        }
         ed.apply()
     }
 
     fun clearSession(context: Context) {
         authToken = null
         currentUserId = null
+        currentUserEmail = null
         currentUserName = null
         currentUserRole = null
+        forceOffline = false
         isOnline = false
         val sp = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        sp.edit().remove(KEY_TOKEN).remove(KEY_UID).remove(KEY_NAME).remove(KEY_ROLE).apply()
+        sp.edit().remove(KEY_TOKEN).remove(KEY_UID).remove(KEY_EMAIL).remove(KEY_NAME).remove(KEY_ROLE).remove(KEY_FORCE_OFFLINE).apply()
     }
+
+    fun isEffectivelyOnline(): Boolean {
+        return !forceOffline && isOnline && !authToken.isNullOrBlank()
+    }
+
+    fun isBitecmaUser(): Boolean {
+        return currentUserEmail?.equals("bitecma@bitecma.cl", ignoreCase = true) == true
+    }
+
 
     fun saveLastLoginNow(context: Context, email: String) {
         val k = lastLoginKey(email)

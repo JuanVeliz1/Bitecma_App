@@ -25,6 +25,7 @@ import com.bitecma.app.network.AuthLoginRequest
 import kotlinx.coroutines.launch
 import com.bitecma.app.data.PerfilesData
 import com.bitecma.app.data.AppState
+import com.bitecma.app.data.DataManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -164,6 +165,8 @@ fun LoginScreen(navController: NavController) {
                                     if (body.ok == true && !body.token.isNullOrBlank()) {
                                         AppState.isOnline = true
                                         AppState.authToken = body.token
+                                        AppState.currentUserEmail = e
+                                        AppState.forceOffline = false
                                         val userApi = body.user
                                         AppState.currentUserId = userApi?.uid
                                         AppState.currentUserName = userApi?.nombre
@@ -171,6 +174,7 @@ fun LoginScreen(navController: NavController) {
                                         AppState.persistSession(ctx)
                                         AppState.saveLastLoginNow(ctx, e)
                                         successMessage = "Bienvenido ${userApi?.nombre ?: ""} (Online)"
+                                        runCatching { DataManager.syncAllFromServer(ctx) }
                                         navController.navigate("dashboard/${userApi?.uid ?: 0}") {
                                             popUpTo("login") { inclusive = true }
                                         }
@@ -193,6 +197,7 @@ fun LoginScreen(navController: NavController) {
                             if (localUser != null && localUser.contrasena == p) {
                                 AppState.isOnline = false
                                 AppState.authToken = null
+                                AppState.currentUserEmail = e
                                 AppState.currentUserId = localUser.id
                                 AppState.currentUserName = localUser.nombre
                                 AppState.currentUserRole = localUser.rol

@@ -35,6 +35,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import com.bitecma.app.network.*
 import com.bitecma.app.data.*
 import kotlinx.coroutines.launch
@@ -53,6 +54,7 @@ private data class OperacionItem(
 @Composable
 fun OperacionesScreen(navController: NavController, userId: Int) {
     val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var expandedOpId by remember { mutableStateOf<String?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
@@ -66,14 +68,14 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     val selectedSpeciesIds = remember { mutableStateListOf<Int>() }
     val muestreoBySpeciesId = remember { mutableStateMapOf<Int, Set<String>>() }
     val transectosList = remember { mutableStateListOf<DensidadUnidadDto>() }
-    var especiesMaestras by remember { mutableStateOf<List<EspecieDto>>(emptyList()) }
-    var botesMaestros by remember { mutableStateOf<List<BoteMaestroDto>>(emptyList()) }
-    var regiones by remember { mutableStateOf<List<RegionDto>>(emptyList()) }
-    var regionLabelById by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
+    var especiesMaestras by remember { mutableStateOf(DataManager.especiesMaestras.toList()) }
+    var botesMaestros by remember { mutableStateOf(DataManager.botesMaestros.toList()) }
+    var regiones by remember { mutableStateOf(DataManager.regiones.toList()) }
+    var regionLabelById by remember(regiones) { mutableStateOf(regiones.associate { r -> r.id to listOfNotNull(r.rom, r.nom).joinToString(" — ").ifBlank { "Región ${r.id}" } }) }
     // Listas dinámicas desde API
-    var sectoresAmerbApi by remember { mutableStateOf<List<SectorAmerbDto>>(emptyList()) }
-    var caletasApi by remember { mutableStateOf<List<CaletaDto>>(emptyList()) }
-    var opasApi by remember { mutableStateOf<List<OpaDto>>(emptyList()) }
+    var sectoresAmerbApi by remember { mutableStateOf(DataManager.sectoresAmerb.toList()) }
+    var caletasApi by remember { mutableStateOf(DataManager.caletas.toList()) }
+    var opasApi by remember { mutableStateOf(DataManager.opas.toList()) }
     var selectedRegionId by remember { mutableStateOf<Int?>(1) }
     var numSeguimiento by remember { mutableStateOf("") }
     var sectorAmerbInput by remember { mutableStateOf("") }
@@ -104,6 +106,10 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     // Carga inicial de datos
     LaunchedEffect(isLoading, userId) {
         if (!isLoading) return@LaunchedEffect
+        if (AppState.forceOffline) {
+            isLoading = false
+            return@LaunchedEffect
+        }
         try {
             val regionesRes = RetrofitClient.apiService.getRegiones()
             if (regionesRes.isSuccessful) {
@@ -111,10 +117,9 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                 val body = regionesRes.body()
                 if (body?.ok == true && body.data != null) {
                     regiones = body.data
-                    regionLabelById = body.data.associate { r ->
-                        val label = listOfNotNull(r.rom, r.nom).joinToString(" — ").ifBlank { "Región ${r.id}" }
-                        r.id to label
-                    }
+                    DataManager.regiones.clear()
+                    DataManager.regiones.addAll(body.data)
+                    regionLabelById = body.data.associate { r -> r.id to listOfNotNull(r.rom, r.nom).joinToString(" — ").ifBlank { "Región ${r.id}" } }
                     if (selectedRegionId == null) {
                         selectedRegionId = body.data.firstOrNull()?.id
                     }
@@ -127,12 +132,16 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
             if (botesRes.isSuccessful) {
                 AppState.isOnline = true
                 botesMaestros = botesRes.body()?.data ?: emptyList()
+                DataManager.botesMaestros.clear()
+                DataManager.botesMaestros.addAll(botesMaestros)
             }
 
             val especiesRes = RetrofitClient.apiService.getEspecies()
             if (especiesRes.isSuccessful) {
                 AppState.isOnline = true
                 especiesMaestras = especiesRes.body()?.data ?: emptyList()
+                DataManager.especiesMaestras.clear()
+                DataManager.especiesMaestras.addAll(especiesMaestras)
             }
 
             // Cargar Sectores, Caletas y OPAs desde API de forma explícita
@@ -141,18 +150,24 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                 if (secRes.isSuccessful) {
                     sectoresAmerbApi = secRes.body()?.data ?: emptyList()
                     println("Sectores cargados: ${sectoresAmerbApi.size}")
+                    DataManager.sectoresAmerb.clear()
+                    DataManager.sectoresAmerb.addAll(sectoresAmerbApi)
                 }
                 
                 val calRes = RetrofitClient.apiService.getCaletas()
                 if (calRes.isSuccessful) {
                     caletasApi = calRes.body()?.data ?: emptyList()
                     println("Caletas cargadas: ${caletasApi.size}")
+                    DataManager.caletas.clear()
+                    DataManager.caletas.addAll(caletasApi)
                 }
                 
                 val opaRes = RetrofitClient.apiService.getOpas()
                 if (opaRes.isSuccessful) {
                     opasApi = opaRes.body()?.data ?: emptyList()
                     println("OPAs cargadas: ${opasApi.size}")
+                    DataManager.opas.clear()
+                    DataManager.opas.addAll(opasApi)
                 }
 
                 // Fallback: Si no hay caletas de la API, extraer de botes maestros
@@ -166,6 +181,8 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         CaletaDto(nombre = it, region = regId)
                     }
                     println("Caletas extraídas de botes: ${caletasApi.size}")
+                    DataManager.caletas.clear()
+                    DataManager.caletas.addAll(caletasApi)
                 }
             } catch (e: Exception) {
                 println("Error cargando dropdowns: ${e.message}")
@@ -178,12 +195,14 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                 if (body?.ok == true) {
                     DataManager.operacionesBd.clear()
                     DataManager.operacionesBd.addAll(body.data ?: emptyList())
+                    DataManager.operacionesLc.removeAll { lc -> (body.data ?: emptyList()).any { it.id == lc.id } }
                 }
             }
         } catch (e: Exception) {
             AppState.isOnline = false
             println("Error en carga inicial: ${e.message}")
         }
+        DataManager.persistCache(ctx)
         isLoading = false
     }
 
@@ -632,11 +651,12 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                     val idxLc = DataManager.operacionesLc.indexOfFirst { it.id == updatedOp.id }
                                     if (idxLc >= 0) { DataManager.operacionesLc[idxLc] = updatedOp }
                                 }
+                                DataManager.persistCache(ctx)
                                 
                                 showTransectDialog = false 
 
                                 scope.launch {
-                                    if (AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
+                                    if (AppState.isEffectivelyOnline()) {
                                         try {
                                             val updatedBotesApi = updatedBotes.map { b ->
                                                 val dens = if (b.densTipo.equals("Cuadrante", true) || b.densTipo.equals("cuadrante", true)) "cuadrante" else "transecto"
@@ -672,6 +692,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                                 val idx = DataManager.operacionesBd.indexOfFirst { it.id == currentOp.id }
                                                 if (idx >= 0) DataManager.operacionesBd[idx] = finalSavedOp else DataManager.operacionesBd.add(0, finalSavedOp)
                                                 currentOpForBotes = finalSavedOp
+                                                DataManager.persistCache(ctx)
                                             }
                                         } catch (_: Exception) {}
                                     }
@@ -1079,12 +1100,13 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
 
                     scope.launch {
                         var finalOp: OperacionDto? = null
-                        if (AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
+                        if (AppState.isEffectivelyOnline()) {
                             try {
                                 val res = RetrofitClient.apiService.crearOperacion(req)
                                 if (res.isSuccessful && res.body()?.ok == true) {
                                     finalOp = res.body()!!.data!!
                                     DataManager.operacionesBd.add(0, finalOp)
+                                    DataManager.persistCache(ctx)
                                 }
                             } catch (_: Exception) {}
                         }
@@ -1101,6 +1123,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                 sectorAmerb = selectedSectorAmerb?.nombre
                             )
                             DataManager.operacionesLc.add(finalOp)
+                            DataManager.persistCache(ctx)
                         }
 
                         showAddDialog = false
@@ -1290,10 +1313,11 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                     if (idxLc >= 0) DataManager.operacionesLc[idxLc] = localOp
                                     else DataManager.operacionesLc.add(localOp)
                                 }
+                                DataManager.persistCache(ctx)
                                 showBotesDialog = false
                                 
                                 scope.launch {
-                                    if (AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
+                                    if (AppState.isEffectivelyOnline()) {
                                         try {
                                             val updatedBotesApi = updatedBotesUi.map { b ->
                                                 val dens = if (b.densTipo.equals("Cuadrante", true) || b.densTipo.equals("cuadrante", true)) "cuadrante" else "transecto"
@@ -1330,6 +1354,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                                 val idx = DataManager.operacionesBd.indexOfFirst { it.id == op.id }
                                                 if (idx >= 0) DataManager.operacionesBd[idx] = finalSavedOp else DataManager.operacionesBd.add(0, finalSavedOp)
                                                 currentOpForBotes = finalSavedOp
+                                                DataManager.persistCache(ctx)
                                             }
                                         } catch (_: Exception) {}
                                     }
@@ -1361,10 +1386,11 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Operaciones", color = Color.White)
                         Spacer(Modifier.width(8.dp))
+                        val effectiveOnline = AppState.isEffectivelyOnline()
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
-                                .background(if (AppState.isOnline) Color(0xFF4CAF50) else Color.Gray, androidx.compose.foundation.shape.CircleShape)
+                                .background(if (effectiveOnline) Color(0xFF4CAF50) else Color.Gray, androidx.compose.foundation.shape.CircleShape)
                                 .border(1.dp, Color.White, androidx.compose.foundation.shape.CircleShape)
                         )
                     }
@@ -1445,7 +1471,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                             onDeleteClick = {
                                 scope.launch {
                                     var success = true
-                                    if (item.source == OperacionSource.BD && AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
+                                    if (item.source == OperacionSource.BD && AppState.isEffectivelyOnline()) {
                                         try {
                                             val res = RetrofitClient.apiService.eliminarOperacion(item.op.id)
                                             success = res.isSuccessful && res.body()?.ok == true
@@ -1455,12 +1481,13 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                     if (success) {
                                         if (item.source == OperacionSource.BD) DataManager.operacionesBd.remove(item.op)
                                         else DataManager.operacionesLc.remove(item.op)
+                                        DataManager.persistCache(ctx)
                                     }
                                 }
                             },
                             onUploadLocalClick = {
                                 if (item.source != OperacionSource.LC) return@OperacionCard
-                                if (!AppState.isOnline || AppState.authToken.isNullOrBlank()) return@OperacionCard
+                                if (!AppState.isEffectivelyOnline()) return@OperacionCard
                                 scope.launch {
                                     try {
                                         val res = RetrofitClient.apiService.crearOperacion(
@@ -1476,6 +1503,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                         if (res.isSuccessful && res.body()?.ok == true) {
                                             DataManager.operacionesLc.remove(item.op)
                                             DataManager.operacionesBd.add(0, res.body()!!.data!!)
+                                            DataManager.persistCache(ctx)
                                         }
                                     } catch (_: Exception) {}
                                 }
@@ -1549,7 +1577,10 @@ private fun OperacionCard(
                     Text(subtitulo, fontSize = 12.sp, color = Color.Gray)
                 }
                 Row {
-                    if (item.source == OperacionSource.LC && AppState.isOnline && !AppState.authToken.isNullOrBlank()) {
+                    val canUploadLocal = item.source == OperacionSource.LC &&
+                        AppState.isEffectivelyOnline() &&
+                        DataManager.operacionesBd.none { it.id == op.id }
+                    if (canUploadLocal) {
                         IconButton(onClick = onUploadLocalClick) { Icon(Icons.Default.CloudUpload, null, tint = Color(0xFF1B5E20)) }
                     }
                     IconButton(onClick = onEditBotesClick) { Icon(Icons.Default.Edit, null, tint = Color.Gray) }

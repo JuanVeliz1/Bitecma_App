@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.bitecma.app.data.DataManager
 import com.bitecma.app.data.BoteMaestro
+import com.bitecma.app.data.AppState
 import com.bitecma.app.network.RetrofitClient
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +42,10 @@ fun BotesScreen(navController: NavController, userId: Int) {
         
         // Cargar datos locales primero
         botesData = DataManager.botes
+        if (AppState.forceOffline) {
+            isLoading = false
+            return@LaunchedEffect
+        }
         
         try {
             // 1. Obtener Regiones para mapeo dinámico

@@ -55,8 +55,8 @@ fun DashboardScreen(
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    var docExpanded by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
+    var isConnecting by remember { mutableStateOf(false) }
     
     val opsBd = DataManager.operacionesBd
     val opsLc = DataManager.operacionesLc
@@ -66,7 +66,8 @@ fun DashboardScreen(
     val totalMuestras = countLpMuestras(opsAll)
     val unidadesDensidad = countDensidadUnidades(opsAll)
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(Unit, AppState.forceOffline) {
+        if (AppState.forceOffline) return@LaunchedEffect
         try {
             val especiesRes = RetrofitClient.apiService.getEspecies()
             if (especiesRes.isSuccessful) {
@@ -146,12 +147,69 @@ fun DashboardScreen(
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 
+                val isBitecmaUser = AppState.isBitecmaUser()
+                if (isBitecmaUser) {
+                    Surface(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .fillMaxWidth(),
+                        color = Color(0xFFF8F9FA),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Forzar modo", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFF003366))
+                                Text(
+                                    if (AppState.forceOffline) "OFFLINE (sin llamadas a la API)" else "ONLINE (sincroniza con la nube)",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                            Switch(
+                                checked = !AppState.forceOffline,
+                                enabled = !isConnecting,
+                                onCheckedChange = { checked ->
+                                    if (isConnecting) return@Switch
+                                    AppState.forceOffline = !checked
+                                    if (AppState.forceOffline) {
+                                        AppState.isOnline = false
+                                        AppState.persistSession(ctx)
+                                        return@Switch
+                                    }
+                                    AppState.persistSession(ctx)
+                                    scope.launch {
+                                        isConnecting = true
+                                        val ok = runCatching { DataManager.ensureBitecmaOnlineSession(ctx) }.getOrNull() == true
+                                        if (ok) {
+                                            runCatching { DataManager.syncAllFromServer(ctx) }
+                                        } else {
+                                            AppState.isOnline = false
+                                            AppState.authToken = null
+                                            AppState.persistSession(ctx)
+                                        }
+                                        isConnecting = false
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
                 // Indicador de Estado de Conexión (Online/Offline)
+                val status = when {
+                    AppState.forceOffline -> Triple("MODO OFFLINE", "Forzado por switch", Color(0xFFC62828))
+                    isConnecting -> Triple("CONECTANDO...", "Iniciando sesión y sincronizando", Color(0xFFF9A825))
+                    AppState.isEffectivelyOnline() -> Triple("MODO ONLINE", "Conectado a la nube", Color(0xFF2E7D32))
+                    else -> Triple("MODO OFFLINE", "Sin sesión online", Color(0xFFC62828))
+                }
                 Surface(
                     modifier = Modifier
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                         .fillMaxWidth(),
-                    color = if (AppState.isOnline) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
+                    color = if (status.third == Color(0xFF2E7D32)) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Row(
@@ -163,17 +221,24 @@ fun DashboardScreen(
                             modifier = Modifier
                                 .size(8.dp)
                                 .background(
-                                    if (AppState.isOnline) Color(0xFF2E7D32) else Color(0xFFC62828),
+                                    status.third,
                                     shape = androidx.compose.foundation.shape.CircleShape
                                 )
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (AppState.isOnline) "MODO ONLINE" else "MODO OFFLINE",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (AppState.isOnline) Color(0xFF2E7D32) else Color(0xFFC62828)
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = status.first,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = status.third
+                            )
+                            Text(
+                                text = status.second,
+                                fontSize = 10.sp,
+                                color = Color.Gray
+                            )
+                        }
                     }
                 }
 

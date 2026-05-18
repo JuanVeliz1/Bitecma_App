@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.bitecma.app.data.DataManager
 import com.bitecma.app.data.EspecieMaestra
+import com.bitecma.app.data.AppState
 import com.bitecma.app.network.RetrofitClient
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,6 +34,7 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
 
     LaunchedEffect(Unit) {
         especiesData = DataManager.especies
+        if (AppState.forceOffline) return@LaunchedEffect
         try {
             val res = RetrofitClient.apiService.getEspecies()
             if (res.isSuccessful && res.body()?.ok == true) {

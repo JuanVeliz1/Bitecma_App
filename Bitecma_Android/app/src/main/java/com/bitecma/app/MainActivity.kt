@@ -21,11 +21,13 @@ import com.bitecma.app.ui.dashboard.EspeciesScreen
 import com.bitecma.app.ui.dashboard.DocumentosScreen
 import com.bitecma.app.ui.dashboard.IngresosScreen
 import com.bitecma.app.data.AppState
+import com.bitecma.app.data.DataManager
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppState.loadSession(this)
+        DataManager.loadCache(this)
         val startDestination = if (AppState.currentUserId != null) {
             "dashboard/${AppState.currentUserId}"
         } else {
@@ -33,6 +35,12 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             var isDarkMode by remember { mutableStateOf(false) }
+            val ctx = this@MainActivity
+            LaunchedEffect(AppState.authToken, AppState.forceOffline) {
+                if (!AppState.authToken.isNullOrBlank() && !AppState.forceOffline) {
+                    runCatching { DataManager.syncAllFromServer(ctx) }
+                }
+            }
             
             val navyBlue = Color(0xFF1B263B) // Azul marino relajante
             val softGray = Color(0xFFF5F5F5) // Gris suave para la vista

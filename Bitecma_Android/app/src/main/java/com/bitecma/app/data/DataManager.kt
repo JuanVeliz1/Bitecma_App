@@ -1,10 +1,36 @@
 package com.bitecma.app.data
 
+import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
+import com.bitecma.app.network.BoteMaestroDto
+import com.bitecma.app.network.CaletaDto
+import com.bitecma.app.network.EspecieDto
+import com.bitecma.app.network.AuthLoginRequest
+import com.bitecma.app.network.OperacionUpsertRequest
 import com.bitecma.app.network.OperacionDto
 import com.bitecma.app.network.OperacionBoteDto
+import com.bitecma.app.network.OpaDto
+import com.bitecma.app.network.RegionDto
+import com.bitecma.app.network.RetrofitClient
+import com.bitecma.app.network.SectorAmerbDto
+import com.google.gson.Gson
 
 object DataManager {
+    private const val PREFS = "bitecma_cache"
+    private const val KEY_CACHE_V1 = "cache_v1"
+    private val gson = Gson()
+
+    private data class CachePayload(
+        val operacionesBd: List<OperacionDto> = emptyList(),
+        val operacionesLc: List<OperacionDto> = emptyList(),
+        val regiones: List<RegionDto> = emptyList(),
+        val sectoresAmerb: List<SectorAmerbDto> = emptyList(),
+        val caletas: List<CaletaDto> = emptyList(),
+        val opas: List<OpaDto> = emptyList(),
+        val botesMaestros: List<BoteMaestroDto> = emptyList(),
+        val especiesMaestras: List<EspecieDto> = emptyList()
+    )
+
     // Maestro de Botes
     val botes = mutableStateListOf(
         BoteMaestro("5MENTARIO", "RIQUELME", "963244", "1980", "I — Tarapacá"),
@@ -22,6 +48,13 @@ object DataManager {
         EspecieMaestra(25, "Macha", "Mesodesma donacium")
     )
 
+    val regiones = mutableStateListOf<RegionDto>()
+    val sectoresAmerb = mutableStateListOf<SectorAmerbDto>()
+    val caletas = mutableStateListOf<CaletaDto>()
+    val opas = mutableStateListOf<OpaDto>()
+    val botesMaestros = mutableStateListOf<BoteMaestroDto>()
+    val especiesMaestras = mutableStateListOf<EspecieDto>()
+
     val operacionesBd = mutableStateListOf<OperacionDto>()
 
     val operacionesLc = mutableStateListOf(
@@ -37,4 +70,174 @@ object DataManager {
             )
         )
     )
+
+    fun loadCache(context: Context) {
+        val sp = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val json = sp.getString(KEY_CACHE_V1, null) ?: return
+        val payload = runCatching { gson.fromJson(json, CachePayload::class.java) }.getOrNull() ?: return
+        operacionesBd.clear()
+        operacionesBd.addAll(payload.operacionesBd)
+        operacionesLc.clear()
+        operacionesLc.addAll(payload.operacionesLc)
+
+        regiones.clear()
+        regiones.addAll(payload.regiones)
+        sectoresAmerb.clear()
+        sectoresAmerb.addAll(payload.sectoresAmerb)
+        caletas.clear()
+        caletas.addAll(payload.caletas)
+        opas.clear()
+        opas.addAll(payload.opas)
+        botesMaestros.clear()
+        botesMaestros.addAll(payload.botesMaestros)
+        especiesMaestras.clear()
+        especiesMaestras.addAll(payload.especiesMaestras)
+    }
+
+    fun persistCache(context: Context) {
+        val payload = CachePayload(
+            operacionesBd = operacionesBd.toList(),
+            operacionesLc = operacionesLc.toList(),
+            regiones = regiones.toList(),
+            sectoresAmerb = sectoresAmerb.toList(),
+            caletas = caletas.toList(),
+            opas = opas.toList(),
+            botesMaestros = botesMaestros.toList(),
+            especiesMaestras = especiesMaestras.toList()
+        )
+        val json = gson.toJson(payload)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CACHE_V1, json).apply()
+    }
+
+    suspend fun syncAllFromServer(context: Context) {
+        if (AppState.forceOffline) return
+        if (AppState.authToken.isNullOrBlank()) return
+        val syncOk = runCatching {
+            val regRes = RetrofitClient.apiService.getRegiones()
+            if (regRes.isSuccessful && regRes.body()?.ok == true) {
+                regiones.clear()
+                regiones.addAll(regRes.body()?.data ?: emptyList())
+            }
+
+            val secRes = RetrofitClient.apiService.getSectoresAmerb()
+            if (secRes.isSuccessful && secRes.body()?.ok == true) {
+                sectoresAmerb.clear()
+                sectoresAmerb.addAll(secRes.body()?.data ?: emptyList())
+            }
+
+            val calRes = RetrofitClient.apiService.getCaletas()
+            if (calRes.isSuccessful && calRes.body()?.ok == true) {
+                caletas.clear()
+                caletas.addAll(calRes.body()?.data ?: emptyList())
+            }
+
+            val opaRes = RetrofitClient.apiService.getOpas()
+            if (opaRes.isSuccessful && opaRes.body()?.ok == true) {
+                opas.clear()
+                opas.addAll(opaRes.body()?.data ?: emptyList())
+            }
+
+            val botesRes = RetrofitClient.apiService.getBotes()
+            if (botesRes.isSuccessful && botesRes.body()?.ok == true) {
+                botesMaestros.clear()
+                botesMaestros.addAll(botesRes.body()?.data ?: emptyList())
+            }
+
+            val especiesRes = RetrofitClient.apiService.getEspecies()
+            if (especiesRes.isSuccessful && especiesRes.body()?.ok == true) {
+                especiesMaestras.clear()
+                especiesMaestras.addAll(especiesRes.body()?.data ?: emptyList())
+            }
+
+            val opsRes = RetrofitClient.apiService.getOperaciones()
+            if (opsRes.isSuccessful && opsRes.body()?.ok == true) {
+                val serverOps = opsRes.body()?.data ?: emptyList()
+                val serverIds = serverOps.map { it.id }.toSet()
+                operacionesBd.clear()
+                operacionesBd.addAll(serverOps)
+                operacionesLc.removeAll { it.id in serverIds }
+            }
+
+            true
+        }.getOrElse {
+            false
+        }
+
+        AppState.isOnline = syncOk
+
+        if (syncOk) {
+            val pending = operacionesLc.toList()
+            var anyUploaded = false
+            pending.forEach { op ->
+                val req = OperacionUpsertRequest(
+                    id = op.id,
+                    region = op.region,
+                    sector = op.sector,
+                    sectorAmerbId = op.sectorAmerbId,
+                    sectorAmerb = op.sectorAmerb,
+                    tipoOrg = op.tipoOrg,
+                    opaId = op.opaId,
+                    org = op.org,
+                    numSeg = op.numSeg,
+                    fechaInicio = op.fechaInicio,
+                    fechaFin = op.fechaFin,
+                    botes = op.botes
+                )
+                val updated = runCatching {
+                    val res = RetrofitClient.apiService.actualizarOperacion(op.id, req)
+                    if (res.isSuccessful && res.body()?.ok == true) res.body()?.data else null
+                }.getOrNull()
+                val saved = updated ?: runCatching {
+                    val res = RetrofitClient.apiService.crearOperacion(req)
+                    if (res.isSuccessful && res.body()?.ok == true) res.body()?.data else null
+                }.getOrNull()
+
+                if (saved != null) {
+                    anyUploaded = true
+                    operacionesLc.removeAll { it.id == op.id }
+                    val idx = operacionesBd.indexOfFirst { it.id == saved.id }
+                    if (idx >= 0) operacionesBd[idx] = saved else operacionesBd.add(0, saved)
+                }
+            }
+            if (anyUploaded) {
+                runCatching {
+                    val opsRes = RetrofitClient.apiService.getOperaciones()
+                    if (opsRes.isSuccessful && opsRes.body()?.ok == true) {
+                        val serverOps = opsRes.body()?.data ?: emptyList()
+                        val serverIds = serverOps.map { it.id }.toSet()
+                        operacionesBd.clear()
+                        operacionesBd.addAll(serverOps)
+                        operacionesLc.removeAll { it.id in serverIds }
+                    }
+                }
+            }
+        }
+
+        persistCache(context)
+    }
+
+    suspend fun ensureBitecmaOnlineSession(context: Context): Boolean {
+        if (!AppState.isBitecmaUser()) return false
+        if (AppState.forceOffline) return false
+        if (!AppState.authToken.isNullOrBlank()) {
+            AppState.isOnline = true
+            AppState.persistSession(context)
+            return true
+        }
+        val res = runCatching {
+            RetrofitClient.apiService.login(AuthLoginRequest(correo = "bitecma@bitecma.cl", password = "12345678"))
+        }.getOrNull() ?: return false
+        if (!res.isSuccessful) return false
+        val body = res.body() ?: return false
+        if (body.ok != true || body.token.isNullOrBlank()) return false
+
+        AppState.isOnline = true
+        AppState.authToken = body.token
+        val user = body.user
+        AppState.currentUserId = user?.uid ?: AppState.currentUserId
+        AppState.currentUserName = user?.nombre ?: AppState.currentUserName
+        AppState.currentUserRole = user?.rol ?: AppState.currentUserRole
+        AppState.persistSession(context)
+        return true
+    }
 }
