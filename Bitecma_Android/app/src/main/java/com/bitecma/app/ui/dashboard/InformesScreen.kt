@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import androidx.core.content.ContextCompat
 import com.bitecma.app.data.DataManager
+import com.bitecma.app.data.AppState
 import com.bitecma.app.network.FileMetaDto
 import com.bitecma.app.utils.ExcelExporter
 import com.bitecma.app.network.OperacionDto
@@ -121,29 +122,36 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
 
                 val text = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
 
-                val up = RetrofitClient.apiService.uploadTextFile(
-                    UploadTextFileRequest(
-                        name = name,
-                        opId = selectedOpId,
-                        text = text
-                    )
-                )
-                if (!up.isSuccessful) {
-                    error = "Error del servidor (${up.code()})"
-                    return@launch
-                }
-                val body = up.body()
-                if (body?.ok != true) {
-                    error = body?.error ?: "No se pudo subir"
-                    return@launch
+                val req = UploadTextFileRequest(name = name, opId = selectedOpId, text = text)
+
+                val canUpload = !AppState.forceOffline && !AppState.authToken.isNullOrBlank()
+                val uploaded = if (canUpload) {
+                    val up = RetrofitClient.apiService.uploadTextFile(req)
+                    if (up.isSuccessful && up.body()?.ok == true) {
+                        val refreshed = RetrofitClient.apiService.getFiles(selectedOpId)
+                        if (refreshed.isSuccessful && refreshed.body()?.ok == true) {
+                            files = refreshed.body()?.data ?: emptyList()
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
                 }
 
-                val refreshed = RetrofitClient.apiService.getFiles(selectedOpId)
-                if (refreshed.isSuccessful && refreshed.body()?.ok == true) {
-                    files = refreshed.body()?.data ?: emptyList()
+                if (!uploaded) {
+                    DataManager.enqueueTextFile(req)
+                    DataManager.persistCache(ctx)
+                    error = "Guardado local. Se subirá cuando vuelvas a estar online."
                 }
             } catch (_: Exception) {
-                error = "Sin conexión"
+                error = "Guardado local. Se subirá cuando vuelvas a estar online."
+                val name = "archivo.txt"
+                val text = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
+                val req = UploadTextFileRequest(name = name, opId = selectedOpId, text = text)
+                DataManager.enqueueTextFile(req)
+                DataManager.persistCache(ctx)
             } finally {
                 isLoading = false
             }
@@ -153,6 +161,10 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
     LaunchedEffect(selectedOpId) {
         isLoading = true
         error = null
+        if (AppState.forceOffline || AppState.authToken.isNullOrBlank()) {
+            isLoading = false
+            return@LaunchedEffect
+        }
         try {
             val res = RetrofitClient.apiService.getFiles(selectedOpId)
             if (res.isSuccessful) {

@@ -106,103 +106,36 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     // Carga inicial de datos
     LaunchedEffect(isLoading, userId) {
         if (!isLoading) return@LaunchedEffect
-        if (AppState.forceOffline) {
+        if (AppState.forceOffline || AppState.authToken.isNullOrBlank()) {
+            regiones = DataManager.regiones.toList()
+            botesMaestros = DataManager.botesMaestros.toList()
+            especiesMaestras = DataManager.especiesMaestras.toList()
+            sectoresAmerbApi = DataManager.sectoresAmerb.toList()
+            caletasApi = DataManager.caletas.toList()
+            opasApi = DataManager.opas.toList()
+            regionLabelById = regiones.associate { r -> r.id to listOfNotNull(r.rom, r.nom).joinToString(" — ").ifBlank { "Región ${r.id}" } }
+            if (selectedRegionId == null) {
+                selectedRegionId = regiones.firstOrNull()?.id
+            }
             isLoading = false
             return@LaunchedEffect
         }
-        try {
-            val regionesRes = RetrofitClient.apiService.getRegiones()
-            if (regionesRes.isSuccessful) {
-                AppState.isOnline = true
-                val body = regionesRes.body()
-                if (body?.ok == true && body.data != null) {
-                    regiones = body.data
-                    DataManager.regiones.clear()
-                    DataManager.regiones.addAll(body.data)
-                    regionLabelById = body.data.associate { r -> r.id to listOfNotNull(r.rom, r.nom).joinToString(" — ").ifBlank { "Región ${r.id}" } }
-                    if (selectedRegionId == null) {
-                        selectedRegionId = body.data.firstOrNull()?.id
-                    }
-                }
-            } else {
-                AppState.isOnline = false
-            }
-            
-            val botesRes = RetrofitClient.apiService.getBotes()
-            if (botesRes.isSuccessful) {
-                AppState.isOnline = true
-                botesMaestros = botesRes.body()?.data ?: emptyList()
-                DataManager.botesMaestros.clear()
-                DataManager.botesMaestros.addAll(botesMaestros)
-            }
 
-            val especiesRes = RetrofitClient.apiService.getEspecies()
-            if (especiesRes.isSuccessful) {
-                AppState.isOnline = true
-                especiesMaestras = especiesRes.body()?.data ?: emptyList()
-                DataManager.especiesMaestras.clear()
-                DataManager.especiesMaestras.addAll(especiesMaestras)
-            }
-
-            // Cargar Sectores, Caletas y OPAs desde API de forma explícita
-            try {
-                val secRes = RetrofitClient.apiService.getSectoresAmerb()
-                if (secRes.isSuccessful) {
-                    sectoresAmerbApi = secRes.body()?.data ?: emptyList()
-                    println("Sectores cargados: ${sectoresAmerbApi.size}")
-                    DataManager.sectoresAmerb.clear()
-                    DataManager.sectoresAmerb.addAll(sectoresAmerbApi)
-                }
-                
-                val calRes = RetrofitClient.apiService.getCaletas()
-                if (calRes.isSuccessful) {
-                    caletasApi = calRes.body()?.data ?: emptyList()
-                    println("Caletas cargadas: ${caletasApi.size}")
-                    DataManager.caletas.clear()
-                    DataManager.caletas.addAll(caletasApi)
-                }
-                
-                val opaRes = RetrofitClient.apiService.getOpas()
-                if (opaRes.isSuccessful) {
-                    opasApi = opaRes.body()?.data ?: emptyList()
-                    println("OPAs cargadas: ${opasApi.size}")
-                    DataManager.opas.clear()
-                    DataManager.opas.addAll(opasApi)
-                }
-
-                // Fallback: Si no hay caletas de la API, extraer de botes maestros
-                if (caletasApi.isEmpty() && botesMaestros.isNotEmpty()) {
-                    caletasApi = botesMaestros.mapNotNull { it.caleta }.distinct().map { 
-                        // Intentar inferir la región del bote para la caleta
-                        val bote = botesMaestros.find { b -> b.caleta == it }
-                        val regId = bote?.region_rom?.let { rom -> 
-                            regiones.find { r -> r.rom == rom }?.id 
-                        }
-                        CaletaDto(nombre = it, region = regId)
-                    }
-                    println("Caletas extraídas de botes: ${caletasApi.size}")
-                    DataManager.caletas.clear()
-                    DataManager.caletas.addAll(caletasApi)
-                }
-            } catch (e: Exception) {
-                println("Error cargando dropdowns: ${e.message}")
-            }
-
-            val response = RetrofitClient.apiService.getOperaciones()
-            if (response.isSuccessful) {
-                AppState.isOnline = true
-                val body = response.body()
-                if (body?.ok == true) {
-                    DataManager.operacionesBd.clear()
-                    DataManager.operacionesBd.addAll(body.data ?: emptyList())
-                    DataManager.operacionesLc.removeAll { lc -> (body.data ?: emptyList()).any { it.id == lc.id } }
-                }
-            }
-        } catch (e: Exception) {
-            AppState.isOnline = false
-            println("Error en carga inicial: ${e.message}")
+        runCatching {
+            DataManager.syncAllFromServer(ctx)
         }
-        DataManager.persistCache(ctx)
+
+        regiones = DataManager.regiones.toList()
+        botesMaestros = DataManager.botesMaestros.toList()
+        especiesMaestras = DataManager.especiesMaestras.toList()
+        sectoresAmerbApi = DataManager.sectoresAmerb.toList()
+        caletasApi = DataManager.caletas.toList()
+        opasApi = DataManager.opas.toList()
+        regionLabelById = regiones.associate { r -> r.id to listOfNotNull(r.rom, r.nom).joinToString(" — ").ifBlank { "Región ${r.id}" } }
+        if (selectedRegionId == null) {
+            selectedRegionId = regiones.firstOrNull()?.id
+        }
+
         isLoading = false
     }
 
@@ -373,6 +306,40 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         }
                         Button(
                             onClick = { 
+                                val currentBote = currentBoteForData
+                                val currentOp = currentOpForBotes
+                                if (currentBote != null && currentOp != null) {
+                                    val lpIds = selectedSpeciesIds.filter { sid -> muestreoBySpeciesId[sid]?.contains("L-P") != false }
+                                    if (lpIds.isNotEmpty()) {
+                                        val lpM = (currentBote.lpMuestras ?: emptyMap()).toMutableMap()
+                                        lpIds.forEach { sid ->
+                                            lpM.putIfAbsent(sid.toString(), emptyMap())
+                                        }
+                                        val updatedBote = currentBote.copy(lpMuestras = lpM.toMap())
+                                        currentBoteForData = updatedBote
+
+                                        val updatedBotes = (currentOp.botes ?: emptyList()).toMutableList()
+                                        val idx = updatedBotes.indexOfFirst { it.zona == updatedBote.zona && it.nombre == currentBote.nombre && it.buzo == currentBote.buzo }
+                                        if (idx >= 0) updatedBotes[idx] = updatedBote else updatedBotes.add(updatedBote)
+                                        val updatedOp = currentOp.copy(botes = updatedBotes)
+                                        currentOpForBotes = updatedOp
+                                        DataManager.upsertOperacionInMemory(updatedOp)
+                                        if (!AppState.isEffectivelyOnline()) {
+                                            DataManager.markOperacionDirty(updatedOp.id)
+                                        }
+                                        DataManager.persistCache(ctx)
+                                        scope.launch {
+                                            val ok = DataManager.tryUploadOperacion(ctx, updatedOp)
+                                            if (!ok) {
+                                                DataManager.markOperacionDirty(updatedOp.id)
+                                                DataManager.persistCache(ctx)
+                                            } else {
+                                                currentOpForBotes = DataManager.operacionesBd.firstOrNull { it.id == updatedOp.id } ?: updatedOp
+                                            }
+                                        }
+                                    }
+                                }
+
                                 showSpeciesDialog = false
                                 if (transectosList.isEmpty()) {
                                     transectosList.add(DensidadUnidadDto(num = 1, tipo = currentBoteForData?.densTipo ?: "Transecto", area = 120.0))
@@ -407,6 +374,39 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                 color = if (isSystemInDarkTheme()) Color(0xFF111B2B) else Color.White,
                 tonalElevation = 8.dp
             ) {
+                var subTab by remember { mutableStateOf("DENSIDAD") }
+                var lpIngresoSpeciesId by remember { mutableStateOf<Int?>(null) }
+                val especiesById = remember(especiesMaestras) { especiesMaestras.associateBy { it.id } }
+
+                fun updateOpAndSync(next: OperacionDto) {
+                    currentOpForBotes = next
+                    DataManager.upsertOperacionInMemory(next)
+                    if (!AppState.isEffectivelyOnline()) {
+                        DataManager.markOperacionDirty(next.id)
+                    }
+                    DataManager.persistCache(ctx)
+                    scope.launch {
+                        val ok = DataManager.tryUploadOperacion(ctx, next)
+                        if (!ok) {
+                            DataManager.markOperacionDirty(next.id)
+                            DataManager.persistCache(ctx)
+                        } else {
+                            currentOpForBotes = DataManager.operacionesBd.firstOrNull { it.id == next.id } ?: next
+                        }
+                    }
+                }
+
+                fun updateCurrentBote(transform: (OperacionBoteDto) -> OperacionBoteDto) {
+                    val op = currentOpForBotes ?: return
+                    val curr = currentBoteForData ?: return
+                    val nextBotes = (op.botes ?: emptyList()).map { b ->
+                        if (b.zona == curr.zona && b.nombre == curr.nombre && b.buzo == curr.buzo) transform(b) else b
+                    }
+                    val nextOp = op.copy(botes = nextBotes)
+                    updateOpAndSync(nextOp)
+                    currentBoteForData = nextBotes.firstOrNull { it.zona == curr.zona && it.nombre == curr.nombre && it.buzo == curr.buzo } ?: currentBoteForData
+                }
+
                 Column(modifier = Modifier.fillMaxSize()) {
                     // Header con degradado estilo web
                     Box(
@@ -435,6 +435,108 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     }
 
                     Column(modifier = Modifier.padding(20.dp).weight(1f)) {
+                        TabRow(selectedTabIndex = if (subTab == "DENSIDAD") 0 else 1) {
+                            Tab(
+                                selected = subTab == "DENSIDAD",
+                                onClick = { subTab = "DENSIDAD" },
+                                text = { Text("Densidad", fontWeight = FontWeight.Black) }
+                            )
+                            Tab(
+                                selected = subTab == "LP",
+                                onClick = { subTab = "LP" },
+                                text = { Text("Peso-Longitud", fontWeight = FontWeight.Black) }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        if (subTab == "LP") {
+                            val bote = currentBoteForData
+                            val lpMap = bote?.lpMuestras ?: emptyMap()
+                            val selectedLpIds = remember(selectedSpeciesIds.toList(), muestreoBySpeciesId.toMap()) {
+                                selectedSpeciesIds.filter { sid -> muestreoBySpeciesId[sid]?.contains("L-P") != false }
+                                    .distinct()
+                                    .sortedWith(compareBy({ especiesById[it]?.com ?: "ZZZ" }, { it }))
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Especies (L-P)", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF003366))
+                                Spacer(Modifier.weight(1f))
+                                Surface(
+                                    color = Color(0xFFE8F5E9),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(text = (selectedLpIds.sumOf { sid -> ((lpMap[sid.toString()] ?: emptyMap())["LP"] ?: emptyList()).size }).toString(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF2E7D32))
+                                        Text(text = "Muestras", fontSize = 8.sp, color = Color(0xFF2E7D32))
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Surface(
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color.White,
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                            ) {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color(0xFFF1F3F5))
+                                            .padding(vertical = 10.dp, horizontal = 12.dp)
+                                    ) {
+                                        Text("ESPECIE", modifier = Modifier.weight(1.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                                        Text("MUESTRAS", modifier = Modifier.weight(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                                        Text("TIPO", modifier = Modifier.weight(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(88.dp))
+                                    }
+
+                                    if (selectedLpIds.isEmpty()) {
+                                        Box(Modifier.fillMaxSize().padding(18.dp), contentAlignment = Alignment.Center) {
+                                            Text("Selecciona especies en “Especies a muestrear” (L-P) para ingresar Peso-Longitud", color = Color.Gray, textAlign = TextAlign.Center)
+                                        }
+                                    } else {
+                                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                            items(selectedLpIds) { sid ->
+                                                val sp = especiesById[sid]
+                                                val spName = sp?.com ?: "ID$sid"
+                                                val buckets = lpMap[sid.toString()] ?: emptyMap()
+                                                val lpList = buckets["LP"] ?: emptyList()
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 12.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1.6f)) {
+                                                        Text(spName, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
+                                                        val sci = sp?.sci
+                                                        if (!sci.isNullOrBlank()) {
+                                                            Text(sci, fontSize = 11.sp, color = Color.Gray, maxLines = 1)
+                                                        }
+                                                    }
+                                                    Text(lpList.size.toString(), modifier = Modifier.weight(0.6f), fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF00897B), textAlign = TextAlign.Center)
+                                                    Text("L-P", modifier = Modifier.weight(0.6f), fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF00897B), textAlign = TextAlign.Center)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Button(
+                                                        onClick = { lpIngresoSpeciesId = sid },
+                                                        modifier = Modifier.width(88.dp),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                                                    ) { Text("Ingresar", fontWeight = FontWeight.Black, fontSize = 12.sp) }
+                                                }
+                                                HorizontalDivider(color = Color(0xFFF1F3F5))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD).copy(alpha = 0.8f)),
                             modifier = Modifier.fillMaxWidth(),
@@ -568,6 +670,12 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                             if (densidadSpeciesIds.isEmpty()) {
                                                 Text("No hay fauna seleccionada.", fontSize = 12.sp, color = Color.Gray)
                                             } else {
+                                                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                    Spacer(Modifier.weight(1f))
+                                                    Text("N° IND", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.Gray, modifier = Modifier.width(88.dp), textAlign = TextAlign.Center)
+                                                    Spacer(Modifier.width(10.dp))
+                                                    Text("DENS", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.Gray, modifier = Modifier.width(72.dp), textAlign = TextAlign.Center)
+                                                }
                                                 densidadSpeciesIds.forEach { sid ->
                                                     val esp = especiesMaestras.find { it.id == sid }
                                                     Row(
@@ -584,6 +692,8 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                                             color = Color(0xFF003366),
                                                             maxLines = 1
                                                         )
+                                                        val area = (t.area ?: 120.0).takeIf { it > 0.0 } ?: 120.0
+                                                        val countVal = currentCounts[sid.toString()] ?: 0
                                                         BasicTextField(
                                                             value = currentCounts[sid.toString()]?.toString().orEmpty(),
                                                             onValueChange = { newVal ->
@@ -600,6 +710,13 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                                             singleLine = true,
                                                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                                                         )
+                                                        Spacer(Modifier.width(10.dp))
+                                                        val densText = runCatching { String.format("%.4f", countVal.toDouble() / area) }.getOrNull() ?: "0.0000"
+                                                        Surface(color = Color(0xFFF1F3F5), shape = RoundedCornerShape(10.dp)) {
+                                                            Box(modifier = Modifier.width(72.dp).padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                                                                Text(densText, fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                                                            }
+                                                        }
                                                     }
                                                     Spacer(Modifier.height(6.dp))
                                                 }
@@ -608,6 +725,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                     }
                                 }
                             }
+                        }
                         }
                     }
 
@@ -628,6 +746,10 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         }
                         Button(
                             onClick = { 
+                                if (subTab == "LP") {
+                                    showTransectDialog = false
+                                    return@Button
+                                }
                                 val currentBote = currentBoteForData ?: return@Button
                                 val currentOp = currentOpForBotes ?: return@Button
                                 
@@ -644,57 +766,34 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                 val updatedBotes = (currentOp.botes ?: emptyList()).toMutableList()
                                 val opBoteIdx = updatedBotes.indexOfFirst { it.zona == updatedBote.zona }
                                 if (opBoteIdx >= 0) { updatedBotes[opBoteIdx] = updatedBote } else { updatedBotes.add(updatedBote) }
-                                
-                                val updatedOp = currentOp.copy(botes = updatedBotes)
-                                val idxBd = DataManager.operacionesBd.indexOfFirst { it.id == updatedOp.id }
-                                if (idxBd >= 0) { DataManager.operacionesBd[idxBd] = updatedOp } else {
-                                    val idxLc = DataManager.operacionesLc.indexOfFirst { it.id == updatedOp.id }
-                                    if (idxLc >= 0) { DataManager.operacionesLc[idxLc] = updatedOp }
+
+                                val updatedBotesApi = updatedBotes.map { b ->
+                                    val dens = if (b.densTipo.equals("Cuadrante", true) || b.densTipo.equals("cuadrante", true)) "cuadrante" else "transecto"
+                                    b.copy(
+                                        densTipo = dens,
+                                        transectos = b.transectos?.map { t ->
+                                            t.copy(tipo = if (dens == "cuadrante") "cuadrante" else "transecto")
+                                        }
+                                    )
+                                }
+
+                                val updatedOp = currentOp.copy(botes = updatedBotesApi)
+                                DataManager.upsertOperacionInMemory(updatedOp)
+                                if (!AppState.isEffectivelyOnline()) {
+                                    DataManager.markOperacionDirty(updatedOp.id)
                                 }
                                 DataManager.persistCache(ctx)
                                 
                                 showTransectDialog = false 
 
                                 scope.launch {
-                                    if (AppState.isEffectivelyOnline()) {
-                                        try {
-                                            val updatedBotesApi = updatedBotes.map { b ->
-                                                val dens = if (b.densTipo.equals("Cuadrante", true) || b.densTipo.equals("cuadrante", true)) "cuadrante" else "transecto"
-                                                b.copy(
-                                                    densTipo = dens,
-                                                    transectos = b.transectos?.map { t ->
-                                                        t.copy(tipo = if (dens == "cuadrante") "cuadrante" else "transecto")
-                                                    }
-                                                )
-                                            }
-                                            val req = OperacionUpsertRequest(
-                                                id = currentOp.id,
-                                                region = currentOp.region,
-                                                sector = currentOp.sector,
-                                                sectorAmerbId = currentOp.sectorAmerbId,
-                                                sectorAmerb = currentOp.sectorAmerb,
-                                                tipoOrg = currentOp.tipoOrg,
-                                                opaId = currentOp.opaId,
-                                                org = currentOp.org,
-                                                numSeg = currentOp.numSeg,
-                                                fechaInicio = currentOp.fechaInicio,
-                                                fechaFin = currentOp.fechaFin,
-                                                botes = updatedBotesApi
-                                            )
-                                            val res = RetrofitClient.apiService.actualizarOperacion(currentOp.id, req)
-                                            if (res.isSuccessful && res.body()?.ok == true) {
-                                                val savedOp = res.body()!!.data!!
-                                                val finalSavedOp = if (savedOp.botes.isNullOrEmpty() && updatedBotes.isNotEmpty()) {
-                                                    savedOp.copy(botes = updatedBotes)
-                                                } else {
-                                                    savedOp
-                                                }
-                                                val idx = DataManager.operacionesBd.indexOfFirst { it.id == currentOp.id }
-                                                if (idx >= 0) DataManager.operacionesBd[idx] = finalSavedOp else DataManager.operacionesBd.add(0, finalSavedOp)
-                                                currentOpForBotes = finalSavedOp
-                                                DataManager.persistCache(ctx)
-                                            }
-                                        } catch (_: Exception) {}
+                                    val ok = DataManager.tryUploadOperacion(ctx, updatedOp)
+                                    if (!ok) {
+                                        DataManager.markOperacionDirty(updatedOp.id)
+                                        DataManager.persistCache(ctx)
+                                    } else {
+                                        val saved = DataManager.operacionesBd.firstOrNull { it.id == updatedOp.id } ?: updatedOp
+                                        currentOpForBotes = saved
                                     }
                                 }
                             }, 
@@ -702,9 +801,37 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                             shape = RoundedCornerShape(26.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
                         ) { 
-                            Text("GUARDAR DATOS", fontWeight = FontWeight.Bold) 
+                            Text(if (subTab == "LP") "CERRAR" else "GUARDAR DATOS", fontWeight = FontWeight.Bold) 
                         }
                     }
+                }
+
+                val sid = lpIngresoSpeciesId
+                val bote = currentBoteForData
+                if (sid != null && bote != null) {
+                    LpIngresoDialog(
+                        speciesId = sid,
+                        speciesName = (especiesById[sid]?.com ?: "ID$sid"),
+                        currentSamples = ((bote.lpMuestras ?: emptyMap())[sid.toString()] ?: emptyMap())["LP"] ?: emptyList(),
+                        onDismiss = { lpIngresoSpeciesId = null },
+                        onUpdateSamples = { nextSamples ->
+                            updateCurrentBote { b ->
+                                val lpM = (b.lpMuestras ?: emptyMap()).toMutableMap()
+                                val buckets = (lpM[sid.toString()] ?: emptyMap()).toMutableMap()
+                                buckets["LP"] = nextSamples
+                                lpM[sid.toString()] = buckets.toMap()
+                                b.copy(lpMuestras = lpM.toMap())
+                            }
+                        },
+                        onRemoveSpecies = {
+                            updateCurrentBote { b ->
+                                val lpM = (b.lpMuestras ?: emptyMap()).toMutableMap()
+                                lpM.remove(sid.toString())
+                                b.copy(lpMuestras = lpM.toMap())
+                            }
+                            lpIngresoSpeciesId = null
+                        }
+                    )
                 }
             }
         }
@@ -1303,60 +1430,32 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                 }
                                 
                                 validationError = null
-                                val localOp = op.copy(botes = updatedBotesUi)
+                                val updatedBotesApi = updatedBotesUi.map { b ->
+                                    val dens = if (b.densTipo.equals("Cuadrante", true) || b.densTipo.equals("cuadrante", true)) "cuadrante" else "transecto"
+                                    b.copy(
+                                        densTipo = dens,
+                                        transectos = b.transectos?.map { t ->
+                                            t.copy(tipo = if (dens == "cuadrante") "cuadrante" else "transecto")
+                                        }
+                                    )
+                                }
+
+                                val localOp = op.copy(botes = updatedBotesApi)
                                 currentOpForBotes = localOp
-                                val idxBd = DataManager.operacionesBd.indexOfFirst { it.id == op.id }
-                                if (idxBd >= 0) {
-                                    DataManager.operacionesBd[idxBd] = localOp
-                                } else {
-                                    val idxLc = DataManager.operacionesLc.indexOfFirst { it.id == op.id }
-                                    if (idxLc >= 0) DataManager.operacionesLc[idxLc] = localOp
-                                    else DataManager.operacionesLc.add(localOp)
+                                DataManager.upsertOperacionInMemory(localOp)
+                                if (!AppState.isEffectivelyOnline()) {
+                                    DataManager.markOperacionDirty(localOp.id)
                                 }
                                 DataManager.persistCache(ctx)
                                 showBotesDialog = false
                                 
                                 scope.launch {
-                                    if (AppState.isEffectivelyOnline()) {
-                                        try {
-                                            val updatedBotesApi = updatedBotesUi.map { b ->
-                                                val dens = if (b.densTipo.equals("Cuadrante", true) || b.densTipo.equals("cuadrante", true)) "cuadrante" else "transecto"
-                                                b.copy(
-                                                    densTipo = dens,
-                                                    transectos = b.transectos?.map { t ->
-                                                        t.copy(tipo = if (dens == "cuadrante") "cuadrante" else "transecto")
-                                                    }
-                                                )
-                                            }
-                                            val req = OperacionUpsertRequest(
-                                                id = op.id,
-                                                region = op.region,
-                                                sector = op.sector,
-                                                sectorAmerbId = op.sectorAmerbId,
-                                                sectorAmerb = op.sectorAmerb,
-                                                tipoOrg = op.tipoOrg,
-                                                opaId = op.opaId,
-                                                org = op.org,
-                                                numSeg = op.numSeg,
-                                                fechaInicio = op.fechaInicio,
-                                                fechaFin = op.fechaFin,
-                                                botes = updatedBotesApi
-                                            )
-                                            val res = RetrofitClient.apiService.actualizarOperacion(op.id, req)
-                                            if (res.isSuccessful && res.body()?.ok == true) {
-                                                val savedOp = res.body()!!.data!!
-                                                val finalSavedOp = if (savedOp.botes.isNullOrEmpty() && updatedBotesUi.isNotEmpty()) {
-                                                    savedOp.copy(botes = updatedBotesUi)
-                                                } else {
-                                                    savedOp
-                                                }
-                                                
-                                                val idx = DataManager.operacionesBd.indexOfFirst { it.id == op.id }
-                                                if (idx >= 0) DataManager.operacionesBd[idx] = finalSavedOp else DataManager.operacionesBd.add(0, finalSavedOp)
-                                                currentOpForBotes = finalSavedOp
-                                                DataManager.persistCache(ctx)
-                                            }
-                                        } catch (_: Exception) {}
+                                    val ok = DataManager.tryUploadOperacion(ctx, localOp)
+                                    if (!ok) {
+                                        DataManager.markOperacionDirty(localOp.id)
+                                        DataManager.persistCache(ctx)
+                                    } else {
+                                        currentOpForBotes = DataManager.operacionesBd.firstOrNull { it.id == localOp.id } ?: localOp
                                     }
                                 }
                             },
@@ -1404,6 +1503,25 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     IconButton(onClick = { isLoading = true }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refrescar", tint = Color.White)
                     }
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                if (!AppState.isEffectivelyOnline()) return@launch
+                                isLoading = true
+                                DataManager.syncAllFromServer(ctx)
+                                regiones = DataManager.regiones.toList()
+                                regionLabelById = regiones.associate { r -> r.id to listOfNotNull(r.rom, r.nom).joinToString(" — ").ifBlank { "Región ${r.id}" } }
+                                botesMaestros = DataManager.botesMaestros.toList()
+                                especiesMaestras = DataManager.especiesMaestras.toList()
+                                sectoresAmerbApi = DataManager.sectoresAmerb.toList()
+                                caletasApi = DataManager.caletas.toList()
+                                opasApi = DataManager.opas.toList()
+                                isLoading = false
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Sync, contentDescription = "Sincronizar todo", tint = Color.White)
+                    }
                     IconButton(onClick = { showAddDialog = true }) {
                         Icon(Icons.Default.Add, contentDescription = "Nueva", tint = Color.White)
                     }
@@ -1417,6 +1535,22 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                 CircularProgressIndicator()
             }
         } else {
+            val grouped = remember(operacionesUi) {
+                operacionesUi
+                    .groupBy { it.op.region }
+                    .toList()
+                    .sortedWith(compareBy({ it.first ?: Int.MAX_VALUE }, { it.first ?: Int.MAX_VALUE }))
+            }
+            val regionExpanded = remember { mutableStateMapOf<String, Boolean>() }
+            LaunchedEffect(grouped.size) {
+                grouped.forEachIndexed { idx, pair ->
+                    val regionKey = pair.first?.toString() ?: "null"
+                    if (!regionExpanded.containsKey(regionKey)) {
+                        regionExpanded[regionKey] = idx == 0
+                    }
+                }
+            }
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1428,88 +1562,141 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     Text("Operaciones", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Text("Cada operación agrupa botes con sus datos técnicos", color = Color.Gray, fontSize = 12.sp)
                     Spacer(modifier = Modifier.height(16.dp))
-                }
-                val grouped = operacionesUi
-                    .groupBy { it.op.region }
-                    .toList()
-                    .sortedWith(compareBy({ it.first ?: Int.MAX_VALUE }, { it.first ?: Int.MAX_VALUE }))
-
-                grouped.forEach { (regionId, ops) ->
-                    item {
-                        Text(
-                            regionId?.let { regionLabelById[it] } ?: "Sin región",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Black,
-                            color = Color(0xFF003366),
-                            modifier = Modifier.padding(top = 6.dp, bottom = 10.dp)
-                        )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                if (!AppState.isEffectivelyOnline()) return@launch
+                                isLoading = true
+                                DataManager.syncAllFromServer(ctx)
+                                regiones = DataManager.regiones.toList()
+                                regionLabelById = regiones.associate { r -> r.id to listOfNotNull(r.rom, r.nom).joinToString(" — ").ifBlank { "Región ${r.id}" } }
+                                botesMaestros = DataManager.botesMaestros.toList()
+                                especiesMaestras = DataManager.especiesMaestras.toList()
+                                sectoresAmerbApi = DataManager.sectoresAmerb.toList()
+                                caletasApi = DataManager.caletas.toList()
+                                opasApi = DataManager.opas.toList()
+                                isLoading = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        enabled = AppState.isEffectivelyOnline(),
+                        shape = RoundedCornerShape(999.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                    ) {
+                        Icon(Icons.Default.Sync, null)
+                        Spacer(Modifier.width(10.dp))
+                        Text("SINCRONIZAR TODO", fontWeight = FontWeight.Black)
                     }
-                    items(ops) { item ->
-                        OperacionCard(
-                            item = item,
-                            isExpanded = expandedOpId == item.op.id,
-                            onExpandClick = { expandedOpId = if (expandedOpId == item.op.id) null else item.op.id },
-                            onEditBotesClick = {
-                                currentOpForBotes = item.op
-                                botesList.clear()
-                                botesList.addAll(item.op.botes ?: emptyList())
-                                showBotesDialog = true
-                            },
-                            onEditDataClick = { bote ->
-                                currentOpForBotes = item.op
-                                currentBoteForData = bote
-                                
-                                selectedSpeciesIds.clear()
-                                val existingSpecies = bote.transectos?.flatMap { it.counts?.keys ?: emptySet() }?.mapNotNull { it.toIntOrNull() }?.distinct() ?: emptyList()
-                                selectedSpeciesIds.addAll(existingSpecies)
-                                
-                                transectosList.clear()
-                                transectosList.addAll(bote.transectos ?: emptyList())
-                                
-                                showSpeciesDialog = true
-                            },
-                            onDeleteClick = {
-                                scope.launch {
-                                    var success = true
-                                    if (item.source == OperacionSource.BD && AppState.isEffectivelyOnline()) {
-                                        try {
-                                            val res = RetrofitClient.apiService.eliminarOperacion(item.op.id)
-                                            success = res.isSuccessful && res.body()?.ok == true
-                                        } catch (_: Exception) { success = false }
-                                    }
-                                    
-                                    if (success) {
-                                        if (item.source == OperacionSource.BD) DataManager.operacionesBd.remove(item.op)
-                                        else DataManager.operacionesLc.remove(item.op)
-                                        DataManager.persistCache(ctx)
-                                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                grouped.forEach { (regionId, ops) ->
+                    val regionKey = regionId?.toString() ?: "null"
+                    val isRegionExpanded = regionExpanded[regionKey] ?: false
+                    item {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp, bottom = 10.dp)
+                                .clickable { regionExpanded[regionKey] = !isRegionExpanded },
+                            color = Color(0xFFF1F3F5),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFFE5E7EB))
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        regionId?.let { regionLabelById[it] } ?: "Sin región",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color(0xFF003366)
+                                    )
+                                    Text(
+                                        "${ops.size} operación(es)",
+                                        fontSize = 11.sp,
+                                        color = Color.Gray
+                                    )
                                 }
-                            },
-                            onUploadLocalClick = {
-                                if (item.source != OperacionSource.LC) return@OperacionCard
-                                if (!AppState.isEffectivelyOnline()) return@OperacionCard
-                                scope.launch {
-                                    try {
-                                        val res = RetrofitClient.apiService.crearOperacion(
-                                            OperacionUpsertRequest(
-                                                id = item.op.id,
-                                                region = item.op.region,
-                                                sector = item.op.sector,
-                                                fechaInicio = item.op.fechaInicio,
-                                                fechaFin = item.op.fechaFin,
-                                                botes = item.op.botes
-                                            )
-                                        )
-                                        if (res.isSuccessful && res.body()?.ok == true) {
-                                            DataManager.operacionesLc.remove(item.op)
-                                            DataManager.operacionesBd.add(0, res.body()!!.data!!)
+                                Icon(
+                                    if (isRegionExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null,
+                                    tint = Color(0xFF003366)
+                                )
+                            }
+                        }
+                    }
+
+                    if (isRegionExpanded) {
+                        items(ops, key = { "${it.source}-${it.op.id}" }) { item ->
+                            OperacionCard(
+                                item = item,
+                                isExpanded = expandedOpId == item.op.id,
+                                onExpandClick = { expandedOpId = if (expandedOpId == item.op.id) null else item.op.id },
+                                onEditBotesClick = {
+                                    currentOpForBotes = item.op
+                                    botesList.clear()
+                                    botesList.addAll(item.op.botes ?: emptyList())
+                                    showBotesDialog = true
+                                },
+                                onEditDataClick = { bote ->
+                                    currentOpForBotes = item.op
+                                    currentBoteForData = bote
+                                    
+                                    selectedSpeciesIds.clear()
+                                    muestreoBySpeciesId.clear()
+                                    val densIds = bote.transectos
+                                        ?.flatMap { it.counts?.keys ?: emptySet() }
+                                        ?.mapNotNull { it.toIntOrNull() }
+                                        ?.distinct()
+                                        ?: emptyList()
+                                    val lpIds = bote.lpMuestras
+                                        ?.keys
+                                        ?.mapNotNull { it.toIntOrNull() }
+                                        ?.distinct()
+                                        ?: emptyList()
+                                    val existingSpecies = (densIds + lpIds).distinct()
+                                    selectedSpeciesIds.addAll(existingSpecies)
+                                    densIds.forEach { sid -> muestreoBySpeciesId[sid] = setOf("DENSIDAD", "L-P") }
+                                    lpIds.forEach { sid -> muestreoBySpeciesId[sid] = (muestreoBySpeciesId[sid] ?: emptySet()) + "L-P" }
+                                    
+                                    transectosList.clear()
+                                    transectosList.addAll(bote.transectos ?: emptyList())
+                                    
+                                    showSpeciesDialog = true
+                                },
+                                onDeleteClick = {
+                                    scope.launch {
+                                        var success = true
+                                        if (item.source == OperacionSource.BD && AppState.isEffectivelyOnline()) {
+                                            try {
+                                                val res = RetrofitClient.apiService.eliminarOperacion(item.op.id)
+                                                success = res.isSuccessful && res.body()?.ok == true
+                                            } catch (_: Exception) { success = false }
+                                        }
+                                        
+                                        if (success) {
+                                            if (item.source == OperacionSource.BD) DataManager.operacionesBd.remove(item.op)
+                                            else DataManager.operacionesLc.remove(item.op)
                                             DataManager.persistCache(ctx)
                                         }
-                                    } catch (_: Exception) {}
+                                    }
+                                },
+                                onUploadLocalClick = {
+                                    if (item.source != OperacionSource.LC) return@OperacionCard
+                                    if (!AppState.isEffectivelyOnline()) return@OperacionCard
+                                    scope.launch {
+                                        val ok = DataManager.tryUploadOperacion(ctx, item.op)
+                                        if (!ok) {
+                                            DataManager.markOperacionDirty(item.op.id)
+                                            DataManager.persistCache(ctx)
+                                        }
+                                    }
                                 }
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
                     }
                 }
             }
@@ -2193,25 +2380,29 @@ fun BoteFinalItem(b: BoteMaestroDto, onSelect: (BoteMaestroDto) -> Unit) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun OperacionDataDialog(
     opInitial: OperacionDto,
     regionLabel: String?,
     especiesMaestras: List<EspecieDto>,
     onDismiss: () -> Unit
 ) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var op by remember(opInitial.id) { mutableStateOf(opInitial) }
     var tab by remember { mutableStateOf("DENSIDAD") }
     var selectedBoteKey by remember { mutableStateOf<String?>(null) }
     var unidadTipo by remember { mutableStateOf("transecto") }
 
     LaunchedEffect(opInitial.id) {
+        if (AppState.forceOffline || AppState.authToken.isNullOrBlank()) return@LaunchedEffect
         try {
             val res = RetrofitClient.apiService.getOperacion(opInitial.id)
             if (res.isSuccessful && res.body()?.ok == true && res.body()?.data != null) {
                 val fresh = res.body()!!.data!!
                 op = fresh
-                val idx = DataManager.operacionesBd.indexOfFirst { it.id == fresh.id }
-                if (idx >= 0) DataManager.operacionesBd[idx] = fresh
+                DataManager.upsertOperacionInMemory(fresh)
+                DataManager.persistCache(ctx)
             }
         } catch (_: Exception) {
         }
@@ -2238,6 +2429,39 @@ private fun OperacionDataDialog(
     }
 
     val especiesById = remember(especiesMaestras) { especiesMaestras.associateBy { it.id } }
+
+    fun updateOperacion(next: OperacionDto) {
+        op = next
+        DataManager.upsertOperacionInMemory(next)
+        if (!AppState.isEffectivelyOnline()) {
+            DataManager.markOperacionDirty(next.id)
+        }
+        DataManager.persistCache(ctx)
+    }
+
+    fun updateSelectedBote(transform: (OperacionBoteDto) -> OperacionBoteDto) {
+        val curr = selectedBote ?: return
+        val nextBotes = botes.map { b ->
+            if (boteKey(b) == boteKey(curr)) transform(b) else b
+        }
+        updateOperacion(op.copy(botes = nextBotes))
+    }
+
+    fun syncOperacionIfOnline() {
+        if (!AppState.isEffectivelyOnline()) return
+        val snapshot = op
+        scope.launch {
+            val ok = DataManager.tryUploadOperacion(ctx, snapshot)
+            if (!ok) {
+                DataManager.markOperacionDirty(snapshot.id)
+                DataManager.persistCache(ctx)
+            }
+        }
+    }
+
+    val lpSpecies = remember(especiesMaestras) { especiesMaestras.filter { it.lp != false }.sortedBy { it.com } }
+    var showLpSpeciesPicker by remember { mutableStateOf(false) }
+    var lpIngresoSpeciesId by remember { mutableStateOf<Int?>(null) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
@@ -2301,12 +2525,12 @@ private fun OperacionDataDialog(
                         FilterChip(
                             selected = tab == "DENSIDAD",
                             onClick = { tab = "DENSIDAD" },
-                            label = { Text("EVADIR") }
+                            label = { Text("Densidad") }
                         )
                         FilterChip(
                             selected = tab == "LP",
                             onClick = { tab = "LP" },
-                            label = { Text("L-P") }
+                            label = { Text("Peso-Longitud") }
                         )
                     }
 
@@ -2456,24 +2680,9 @@ private fun OperacionDataDialog(
                                 }
                             }
                         } else {
-                            val lp = selectedBote?.lpMuestras ?: emptyMap()
-                            val rows = remember(lp, especiesMaestras.size) {
-                                val out = mutableListOf<Triple<String, String, String>>()
-                                lp.forEach { (spId, buckets) ->
-                                    val sid = spId.toIntOrNull()
-                                    val spName = if (sid != null) (especiesById[sid]?.com ?: "ID$sid") else spId
-                                    buckets.forEach { (kind, ms) ->
-                                        ms.forEach { m ->
-                                            val s = when (kind.uppercase()) {
-                                                "LP" -> "L=${m.l ?: "—"} · P=${m.p ?: "—"}"
-                                                "D" -> "D=${m.d ?: "—"}"
-                                                else -> "L=${m.l ?: "—"}"
-                                            }
-                                            out.add(Triple(spName, kind.uppercase(), s))
-                                        }
-                                    }
-                                }
-                                out
+                            val lpMap = selectedBote?.lpMuestras ?: emptyMap()
+                            val selectedLpIds = remember(lpMap, lpSpecies.size) {
+                                lpMap.keys.mapNotNull { it.toIntOrNull() }.distinct().sortedBy { especiesById[it]?.com ?: "" }
                             }
 
                             Surface(
@@ -2482,31 +2691,73 @@ private fun OperacionDataDialog(
                                 shape = RoundedCornerShape(14.dp),
                                 border = BorderStroke(1.dp, Color(0xFFF1F3F5))
                             ) {
-                                if (rows.isEmpty()) {
-                                    Box(Modifier.fillMaxSize().padding(18.dp), contentAlignment = Alignment.Center) {
-                                        Text("Sin muestras L-P registradas", color = Color.Gray)
-                                    }
-                                } else {
-                                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                        item {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .background(Color(0xFFF1F3F5))
-                                                    .padding(vertical = 10.dp, horizontal = 12.dp)
-                                            ) {
-                                                Text("ESPECIE", modifier = Modifier.weight(1.4f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
-                                                Text("TIPO", modifier = Modifier.weight(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
-                                                Text("VALORES", modifier = Modifier.weight(1.4f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
-                                            }
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Button(
+                                            onClick = { showLpSpeciesPicker = true },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                                        ) {
+                                            Text("Seleccionar especies", fontWeight = FontWeight.Black)
                                         }
-                                        items(rows) { (esp, kind, vals) ->
-                                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 12.dp)) {
-                                                Text(esp, modifier = Modifier.weight(1.4f), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
-                                                Text(kind, modifier = Modifier.weight(0.6f), fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF00897B), textAlign = TextAlign.Center)
-                                                Text(vals, modifier = Modifier.weight(1.4f), fontSize = 12.sp, color = Color.Gray)
+                                        Spacer(Modifier.weight(1f))
+                                        Text(
+                                            "${selectedLpIds.size} especie(s)",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.Gray
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color(0xFFF1F3F5))
+                                            .padding(vertical = 10.dp, horizontal = 12.dp)
+                                    ) {
+                                        Text("ESPECIE", modifier = Modifier.weight(1.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                                        Text("MUESTRAS", modifier = Modifier.weight(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                                        Text("TIPO", modifier = Modifier.weight(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(88.dp))
+                                    }
+
+                                    if (selectedLpIds.isEmpty()) {
+                                        Box(Modifier.fillMaxSize().padding(18.dp), contentAlignment = Alignment.Center) {
+                                            Text("Selecciona especies para ingresar Peso-Longitud", color = Color.Gray)
+                                        }
+                                    } else {
+                                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                            items(selectedLpIds) { sid ->
+                                                val sp = especiesById[sid]
+                                                val spName = sp?.com ?: "ID$sid"
+                                                val buckets = lpMap[sid.toString()] ?: emptyMap()
+                                                val lpList = buckets["LP"] ?: emptyList()
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 12.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1.6f)) {
+                                                        Text(spName, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
+                                                        val sci = sp?.sci
+                                                        if (!sci.isNullOrBlank()) {
+                                                            Text(sci, fontSize = 11.sp, color = Color.Gray, maxLines = 1)
+                                                        }
+                                                    }
+                                                    Text(lpList.size.toString(), modifier = Modifier.weight(0.6f), fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF00897B), textAlign = TextAlign.Center)
+                                                    Text("L-P", modifier = Modifier.weight(0.6f), fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF00897B), textAlign = TextAlign.Center)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Button(
+                                                        onClick = { lpIngresoSpeciesId = sid },
+                                                        modifier = Modifier.width(88.dp),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                                                    ) { Text("Ingresar", fontWeight = FontWeight.Black, fontSize = 12.sp) }
+                                                }
+                                                HorizontalDivider(color = Color(0xFFF1F3F5))
                                             }
-                                            HorizontalDivider(color = Color(0xFFF1F3F5))
                                         }
                                     }
                                 }
@@ -2523,6 +2774,350 @@ private fun OperacionDataDialog(
                 ) { Text("CERRAR", fontWeight = FontWeight.Bold, color = Color.Gray) }
             }
         }
+    }
+
+    if (showLpSpeciesPicker) {
+        LpSpeciesPickerDialog(
+            species = lpSpecies,
+            especiesById = especiesById,
+            currentSelectedIds = (selectedBote?.lpMuestras?.keys ?: emptySet()).mapNotNull { it.toIntOrNull() }.toSet(),
+            onDismiss = { showLpSpeciesPicker = false },
+            onApply = { ids ->
+                updateSelectedBote { b ->
+                    val base = (b.lpMuestras ?: emptyMap()).toMutableMap()
+                    ids.forEach { id ->
+                        base.putIfAbsent(id.toString(), emptyMap())
+                    }
+                    base.keys.toList().forEach { k ->
+                        val kid = k.toIntOrNull()
+                        if (kid != null && !ids.contains(kid)) {
+                            base.remove(k)
+                        }
+                    }
+                    b.copy(lpMuestras = base.toMap())
+                }
+                syncOperacionIfOnline()
+                showLpSpeciesPicker = false
+            }
+        )
+    }
+
+    val sid = lpIngresoSpeciesId
+    if (sid != null && selectedBote != null) {
+        LpIngresoDialog(
+            speciesId = sid,
+            speciesName = (especiesById[sid]?.com ?: "ID$sid"),
+            currentSamples = ((selectedBote.lpMuestras ?: emptyMap())[sid.toString()] ?: emptyMap())["LP"] ?: emptyList(),
+            onDismiss = { lpIngresoSpeciesId = null },
+            onUpdateSamples = { nextSamples ->
+                updateSelectedBote { b ->
+                    val lpM = (b.lpMuestras ?: emptyMap()).toMutableMap()
+                    val buckets = (lpM[sid.toString()] ?: emptyMap()).toMutableMap()
+                    buckets["LP"] = nextSamples
+                    lpM[sid.toString()] = buckets.toMap()
+                    b.copy(lpMuestras = lpM.toMap())
+                }
+                syncOperacionIfOnline()
+            },
+            onRemoveSpecies = {
+                updateSelectedBote { b ->
+                    val lpM = (b.lpMuestras ?: emptyMap()).toMutableMap()
+                    lpM.remove(sid.toString())
+                    b.copy(lpMuestras = lpM.toMap())
+                }
+                syncOperacionIfOnline()
+                lpIngresoSpeciesId = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun LpSpeciesPickerDialog(
+    species: List<EspecieDto>,
+    especiesById: Map<Int, EspecieDto>,
+    currentSelectedIds: Set<Int>,
+    onDismiss: () -> Unit,
+    onApply: (Set<Int>) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    val selected = remember(currentSelectedIds) { mutableStateListOf<Int>().apply { addAll(currentSelectedIds) } }
+    val filtered = remember(species, query) {
+        val q = query.trim().lowercase()
+        if (q.isBlank()) species
+        else species.filter {
+            it.com.lowercase().contains(q) ||
+                        (it.sci ?: "").lowercase().contains(q)
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.92f).fillMaxHeight(0.88f),
+            shape = RoundedCornerShape(18.dp),
+            color = Color.White
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                Text("Seleccionar especies", fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color(0xFF003366))
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Buscar por nombre…") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    singleLine = true
+                )
+                Spacer(Modifier.height(10.dp))
+
+                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    items(filtered) { sp ->
+                        val id = sp.id
+                        val isSel = selected.contains(id)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (selected.contains(id)) selected.remove(id) else selected.add(id)
+                                }
+                                .padding(vertical = 10.dp, horizontal = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = isSel,
+                                onCheckedChange = { checked ->
+                                    if (checked) {
+                                        if (!selected.contains(id)) selected.add(id)
+                                    } else {
+                                        selected.remove(id)
+                                    }
+                                }
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(sp.com, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF003366))
+                                val sci = sp.sci
+                                if (!sci.isNullOrBlank()) {
+                                    Text(sci, fontSize = 11.sp, color = Color.Gray, maxLines = 1)
+                                }
+                            }
+                            if (especiesById.containsKey(id)) {
+                                Text("L-P", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFF00897B))
+                            }
+                        }
+                        HorizontalDivider(color = Color(0xFFF1F3F5))
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(999.dp)
+                    ) { Text("Cancelar") }
+                    Button(
+                        onClick = { onApply(selected.toSet()) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(999.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                    ) { Text("Aplicar", fontWeight = FontWeight.Black) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LpIngresoDialog(
+    speciesId: Int,
+    speciesName: String,
+    currentSamples: List<LpSampleDto>,
+    onDismiss: () -> Unit,
+    onUpdateSamples: (List<LpSampleDto>) -> Unit,
+    onRemoveSpecies: () -> Unit
+) {
+    var lText by remember(speciesId) { mutableStateOf("") }
+    var pText by remember(speciesId) { mutableStateOf("") }
+    var samples by remember(speciesId, currentSamples) { mutableStateOf(currentSamples) }
+    var editIndex by remember { mutableStateOf<Int?>(null) }
+    var editL by remember { mutableStateOf("") }
+    var editP by remember { mutableStateOf("") }
+
+    fun parseNumber(s: String): Double? {
+        val t = s.trim().replace(",", ".")
+        return t.toDoubleOrNull()
+    }
+
+    fun applySamples(next: List<LpSampleDto>) {
+        samples = next
+        onUpdateSamples(next)
+    }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.92f),
+            shape = RoundedCornerShape(18.dp),
+            color = Color.White
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(speciesName, fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color(0xFF003366))
+                        Text("Peso-Longitud · ${samples.size} muestra(s)", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, null) }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xFFF2FBF8),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color(0xFFE0F2F1))
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = lText,
+                            onValueChange = { lText = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Longitud (mm)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = pText,
+                            onValueChange = { pText = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Peso (g)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true
+                        )
+                        Button(
+                            onClick = {
+                                val l = parseNumber(lText)
+                                val p = parseNumber(pText)
+                                if (l == null || p == null) return@Button
+                                applySamples(listOf(LpSampleDto(l = l, p = p)) + samples)
+                                lText = ""
+                                pText = ""
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                        ) { Text("Agregar", fontWeight = FontWeight.Black) }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFF1F3F5))
+                        .padding(vertical = 10.dp, horizontal = 12.dp)
+                ) {
+                    Text("#", modifier = Modifier.width(44.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                    Text("L (mm)", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                    Text("P (g)", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                    Spacer(modifier = Modifier.width(140.dp))
+                }
+
+                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    itemsIndexed(samples) { idx, s ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text((samples.size - idx).toString(), modifier = Modifier.width(44.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text((s.l ?: 0.0).toString(), modifier = Modifier.weight(1f), fontSize = 12.sp)
+                            Text((s.p ?: 0.0).toString(), modifier = Modifier.weight(1f), fontSize = 12.sp)
+                            Spacer(Modifier.weight(0.1f))
+                            OutlinedButton(
+                                onClick = {
+                                    editIndex = idx
+                                    editL = (s.l ?: "").toString()
+                                    editP = (s.p ?: "").toString()
+                                },
+                                modifier = Modifier.width(66.dp).height(34.dp),
+                                contentPadding = PaddingValues(0.dp),
+                                shape = RoundedCornerShape(10.dp)
+                            ) { Text("Editar", fontSize = 11.sp) }
+                            Spacer(Modifier.width(8.dp))
+                            OutlinedButton(
+                                onClick = { applySamples(samples.toMutableList().also { it.removeAt(idx) }) },
+                                modifier = Modifier.width(74.dp).height(34.dp),
+                                contentPadding = PaddingValues(0.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD32F2F))
+                            ) { Text("Eliminar", fontSize = 11.sp) }
+                        }
+                        HorizontalDivider(color = Color(0xFFF1F3F5))
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(999.dp)
+                    ) { Text("Cerrar") }
+                    OutlinedButton(
+                        onClick = onRemoveSpecies,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(999.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD32F2F))
+                    ) { Text("Quitar especie") }
+                }
+            }
+        }
+    }
+
+    val idx = editIndex
+    if (idx != null && idx >= 0 && idx < samples.size) {
+        AlertDialog(
+            onDismissRequest = { editIndex = null },
+            title = { Text("Editar muestra") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = editL,
+                        onValueChange = { editL = it },
+                        label = { Text("Longitud (mm)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = editP,
+                        onValueChange = { editP = it },
+                        label = { Text("Peso (g)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val l = parseNumber(editL)
+                        val p = parseNumber(editP)
+                        if (l == null || p == null) return@TextButton
+                        val next = samples.toMutableList()
+                        next[idx] = LpSampleDto(l = l, p = p)
+                        applySamples(next)
+                        editIndex = null
+                    }
+                ) { Text("Guardar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editIndex = null }) { Text("Cancelar") }
+            }
+        )
     }
 }
 

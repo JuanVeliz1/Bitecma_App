@@ -6,6 +6,7 @@ import com.bitecma.app.network.BoteMaestroDto
 import com.bitecma.app.network.CaletaDto
 import com.bitecma.app.network.EspecieDto
 import com.bitecma.app.network.AuthLoginRequest
+import com.bitecma.app.network.UploadTextFileRequest
 import com.bitecma.app.network.OperacionUpsertRequest
 import com.bitecma.app.network.OperacionDto
 import com.bitecma.app.network.OperacionBoteDto
@@ -20,9 +21,17 @@ object DataManager {
     private const val KEY_CACHE_V1 = "cache_v1"
     private val gson = Gson()
 
+    data class PendingTextFile(
+        val name: String,
+        val opId: String? = null,
+        val text: String
+    )
+
     private data class CachePayload(
         val operacionesBd: List<OperacionDto> = emptyList(),
         val operacionesLc: List<OperacionDto> = emptyList(),
+        val dirtyOperacionIds: List<String> = emptyList(),
+        val pendingTextFiles: List<PendingTextFile> = emptyList(),
         val regiones: List<RegionDto> = emptyList(),
         val sectoresAmerb: List<SectorAmerbDto> = emptyList(),
         val caletas: List<CaletaDto> = emptyList(),
@@ -57,6 +66,9 @@ object DataManager {
 
     val operacionesBd = mutableStateListOf<OperacionDto>()
 
+    val dirtyOperacionIds = mutableStateListOf<String>()
+    val pendingTextFiles = mutableStateListOf<PendingTextFile>()
+
     val operacionesLc = mutableStateListOf(
         OperacionDto(
             id = "OP-2026-001",
@@ -79,6 +91,10 @@ object DataManager {
         operacionesBd.addAll(payload.operacionesBd)
         operacionesLc.clear()
         operacionesLc.addAll(payload.operacionesLc)
+        dirtyOperacionIds.clear()
+        dirtyOperacionIds.addAll(payload.dirtyOperacionIds.distinct())
+        pendingTextFiles.clear()
+        pendingTextFiles.addAll(payload.pendingTextFiles)
 
         regiones.clear()
         regiones.addAll(payload.regiones)
@@ -98,6 +114,8 @@ object DataManager {
         val payload = CachePayload(
             operacionesBd = operacionesBd.toList(),
             operacionesLc = operacionesLc.toList(),
+            dirtyOperacionIds = dirtyOperacionIds.toList(),
+            pendingTextFiles = pendingTextFiles.toList(),
             regiones = regiones.toList(),
             sectoresAmerb = sectoresAmerb.toList(),
             caletas = caletas.toList(),
@@ -109,9 +127,116 @@ object DataManager {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CACHE_V1, json).apply()
     }
 
+    fun upsertOperacionInMemory(op: OperacionDto) {
+        val idxBd = operacionesBd.indexOfFirst { it.id == op.id }
+        if (idxBd >= 0) {
+            operacionesBd[idxBd] = op
+            return
+        }
+        val idxLc = operacionesLc.indexOfFirst { it.id == op.id }
+        if (idxLc >= 0) {
+            operacionesLc[idxLc] = op
+        } else {
+            operacionesLc.add(0, op)
+        }
+    }
+
+    fun markOperacionDirty(opId: String) {
+        if (dirtyOperacionIds.contains(opId)) return
+        dirtyOperacionIds.add(opId)
+    }
+
+    fun enqueueTextFile(req: UploadTextFileRequest) {
+        pendingTextFiles.add(PendingTextFile(name = req.name, opId = req.opId, text = req.text))
+    }
+
+    private suspend fun uploadOperacion(op: OperacionDto): OperacionDto? {
+        val req = OperacionUpsertRequest(
+            id = op.id,
+            region = op.region,
+            sector = op.sector,
+            sectorAmerbId = op.sectorAmerbId,
+            sectorAmerb = op.sectorAmerb,
+            tipoOrg = op.tipoOrg,
+            opaId = op.opaId,
+            org = op.org,
+            numSeg = op.numSeg,
+            fechaInicio = op.fechaInicio,
+            fechaFin = op.fechaFin,
+            botes = op.botes
+        )
+
+        val updated = runCatching {
+            val res = RetrofitClient.apiService.actualizarOperacion(op.id, req)
+            if (res.isSuccessful && res.body()?.ok == true) res.body()?.data else null
+        }.getOrNull()
+        if (updated != null) return updated
+
+        return runCatching {
+            val res = RetrofitClient.apiService.crearOperacion(req)
+            if (res.isSuccessful && res.body()?.ok == true) res.body()?.data else null
+        }.getOrNull()
+    }
+
+    private fun applySavedOperacion(saved: OperacionDto) {
+        val idx = operacionesBd.indexOfFirst { it.id == saved.id }
+        if (idx >= 0) operacionesBd[idx] = saved else operacionesBd.add(0, saved)
+        operacionesLc.removeAll { it.id == saved.id }
+        dirtyOperacionIds.removeAll { it == saved.id }
+    }
+
+    private suspend fun flushPendingOps(): Boolean {
+        var any = false
+        val pendingLc = operacionesLc.toList()
+        pendingLc.forEach { op ->
+            val saved = uploadOperacion(op)
+            if (saved != null) {
+                any = true
+                applySavedOperacion(saved)
+            }
+        }
+
+        val dirtyIds = dirtyOperacionIds.toList()
+        dirtyIds.forEach { id ->
+            val op = (operacionesBd + operacionesLc).firstOrNull { it.id == id } ?: return@forEach
+            val saved = uploadOperacion(op)
+            if (saved != null) {
+                any = true
+                applySavedOperacion(saved)
+            }
+        }
+
+        return any
+    }
+
+    private suspend fun flushPendingFiles() {
+        val pending = pendingTextFiles.toList()
+        pending.forEach { f ->
+            val res = runCatching {
+                RetrofitClient.apiService.uploadTextFile(UploadTextFileRequest(name = f.name, opId = f.opId, text = f.text))
+            }.getOrNull()
+            if (res != null && res.isSuccessful && res.body()?.ok == true) {
+                pendingTextFiles.remove(f)
+            }
+        }
+    }
+
+    suspend fun tryUploadOperacion(context: Context, op: OperacionDto): Boolean {
+        if (AppState.forceOffline) return false
+        if (AppState.authToken.isNullOrBlank()) return false
+        val saved = uploadOperacion(op) ?: return false
+        applySavedOperacion(saved)
+        persistCache(context)
+        return true
+    }
+
     suspend fun syncAllFromServer(context: Context) {
         if (AppState.forceOffline) return
         if (AppState.authToken.isNullOrBlank()) return
+
+        val dirtySet = dirtyOperacionIds.toSet()
+        val localById = (operacionesBd + operacionesLc).associateBy { it.id }
+
         val syncOk = runCatching {
             val regRes = RetrofitClient.apiService.getRegiones()
             if (regRes.isSuccessful && regRes.body()?.ok == true) {
@@ -154,7 +279,9 @@ object DataManager {
                 val serverOps = opsRes.body()?.data ?: emptyList()
                 val serverIds = serverOps.map { it.id }.toSet()
                 operacionesBd.clear()
-                operacionesBd.addAll(serverOps)
+                operacionesBd.addAll(serverOps.map { op ->
+                    if (dirtySet.contains(op.id)) localById[op.id] ?: op else op
+                })
                 operacionesLc.removeAll { it.id in serverIds }
             }
 
@@ -166,47 +293,20 @@ object DataManager {
         AppState.isOnline = syncOk
 
         if (syncOk) {
-            val pending = operacionesLc.toList()
-            var anyUploaded = false
-            pending.forEach { op ->
-                val req = OperacionUpsertRequest(
-                    id = op.id,
-                    region = op.region,
-                    sector = op.sector,
-                    sectorAmerbId = op.sectorAmerbId,
-                    sectorAmerb = op.sectorAmerb,
-                    tipoOrg = op.tipoOrg,
-                    opaId = op.opaId,
-                    org = op.org,
-                    numSeg = op.numSeg,
-                    fechaInicio = op.fechaInicio,
-                    fechaFin = op.fechaFin,
-                    botes = op.botes
-                )
-                val updated = runCatching {
-                    val res = RetrofitClient.apiService.actualizarOperacion(op.id, req)
-                    if (res.isSuccessful && res.body()?.ok == true) res.body()?.data else null
-                }.getOrNull()
-                val saved = updated ?: runCatching {
-                    val res = RetrofitClient.apiService.crearOperacion(req)
-                    if (res.isSuccessful && res.body()?.ok == true) res.body()?.data else null
-                }.getOrNull()
-
-                if (saved != null) {
-                    anyUploaded = true
-                    operacionesLc.removeAll { it.id == op.id }
-                    val idx = operacionesBd.indexOfFirst { it.id == saved.id }
-                    if (idx >= 0) operacionesBd[idx] = saved else operacionesBd.add(0, saved)
-                }
-            }
+            val anyUploaded = flushPendingOps()
+            flushPendingFiles()
             if (anyUploaded) {
                 runCatching {
                     val opsRes = RetrofitClient.apiService.getOperaciones()
                     if (opsRes.isSuccessful && opsRes.body()?.ok == true) {
                         val serverOps = opsRes.body()?.data ?: emptyList()
                         val serverIds = serverOps.map { it.id }.toSet()
+                        val dirtyNow = dirtyOperacionIds.toSet()
+                        val localNow = (operacionesBd + operacionesLc).associateBy { it.id }
                         operacionesBd.clear()
-                        operacionesBd.addAll(serverOps)
+                        operacionesBd.addAll(serverOps.map { op ->
+                            if (dirtyNow.contains(op.id)) localNow[op.id] ?: op else op
+                        })
                         operacionesLc.removeAll { it.id in serverIds }
                     }
                 }
