@@ -1,75 +1,61 @@
 package com.bitecma.app.utils
 
-import android.content.Context
 import com.bitecma.app.network.OperacionDto
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import java.io.ByteArrayOutputStream
 
 object ExcelExporter {
 
     fun generateOperacionExcel(operacion: OperacionDto): ByteArray {
-        val workbook = XSSFWorkbook()
-        val sheet = workbook.createSheet("Resumen Operación")
-
-        // Estilo para cabeceras
-        val headerStyle = workbook.createCellStyle().apply {
-            val font = workbook.createFont().apply {
-                bold = true
-            }
-            setFont(font)
+        fun csvEscape(value: String): String {
+            val needsQuotes = value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r')
+            val escaped = value.replace("\"", "\"\"")
+            return if (needsQuotes) "\"$escaped\"" else escaped
         }
 
-        // Información General
-        var rowIdx = 0
-        val row1 = sheet.createRow(rowIdx++)
-        row1.createCell(0).apply { setCellValue("ID Operación:"); cellStyle = headerStyle }
-        row1.createCell(1).setCellValue(operacion.id)
+        val sb = StringBuilder()
+        sb.appendLine(listOf("Campo", "Valor").joinToString(",") { csvEscape(it) })
+        sb.appendLine(listOf("ID Operación", operacion.id).joinToString(",") { csvEscape(it) })
+        sb.appendLine(listOf("Sector", operacion.sector).joinToString(",") { csvEscape(it) })
+        sb.appendLine(listOf("Organización", operacion.org.orEmpty()).joinToString(",") { csvEscape(it) })
+        sb.appendLine()
 
-        val row2 = sheet.createRow(rowIdx++)
-        row2.createCell(0).apply { setCellValue("Sector:"); cellStyle = headerStyle }
-        row2.createCell(1).setCellValue(operacion.sector)
+        val headers = listOf("Medio", "Bote", "Zona", "Buzo", "Unidad", "Unidad #", "Área", "Sustrato", "Counts")
+        sb.appendLine(headers.joinToString(",") { csvEscape(it) })
 
-        val row3 = sheet.createRow(rowIdx++)
-        row3.createCell(0).apply { setCellValue("Organización:"); cellStyle = headerStyle }
-        row3.createCell(1).setCellValue(operacion.org ?: "")
+        val botes = operacion.botes.orEmpty()
+        botes.forEach { bote ->
+            val isIntermareal = bote.submareal == 0 || bote.nombre.equals("Intermareal", ignoreCase = true)
+            val medio = if (isIntermareal) "Intermareal" else "Submareal"
+            val boteNombre = bote.nombre.orEmpty()
+            val zona = bote.zona?.toString().orEmpty()
+            val buzo = bote.buzo.orEmpty()
+            val unidad = bote.densTipo.orEmpty()
 
-        rowIdx++ // Espacio
-
-        // Datos de Botes
-        val headerRow = sheet.createRow(rowIdx++)
-        val headers = listOf("Bote", "Zona", "Buzo", "Unidad", "Transecto #", "Área", "Sustrato")
-        headers.forEachIndexed { i, h ->
-            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
-        }
-
-        // Botes y sus transectos
-        operacion.botes?.forEach { bote ->
-            bote.transectos?.forEach { t ->
-                val row = sheet.createRow(rowIdx++)
-                row.createCell(0).setCellValue(bote.nombre ?: "")
-                row.createCell(1).setCellValue(bote.zona?.toDouble() ?: 0.0)
-                row.createCell(2).setCellValue(bote.buzo ?: "")
-                row.createCell(3).setCellValue(bote.densTipo ?: "")
-                row.createCell(4).setCellValue(t.num?.toDouble() ?: 0.0)
-                row.createCell(5).setCellValue(t.area ?: 0.0)
-                row.createCell(6).setCellValue(t.sustrato ?: "")
-                
-                // Counts de especies
-                var cellOffset = 7
-                t.counts?.forEach { (espId, count) ->
-                    if (row.rowNum == headerRow.rowNum + 1) {
-                        // Solo agregar cabecera de especie en la primera fila de datos si no existe
-                        // Pero esto es simplificado, idealmente tendríamos cabeceras fijas para especies
-                    }
-                    // Por ahora solo listamos los counts en las siguientes celdas
-                    row.createCell(cellOffset++).setCellValue("Esp ID $espId: $count")
+            val unidades = bote.transectos.orEmpty()
+            if (unidades.isEmpty()) {
+                val row = listOf(medio, boteNombre, zona, buzo, unidad, "", "", "", "")
+                sb.appendLine(row.joinToString(",") { csvEscape(it) })
+            } else {
+                unidades.forEach { u ->
+                    val countsCell = u.counts?.entries
+                        ?.sortedBy { it.key }
+                        ?.joinToString(";") { (k, v) -> "$k=$v" }
+                        .orEmpty()
+                    val row = listOf(
+                        medio,
+                        boteNombre,
+                        zona,
+                        buzo,
+                        unidad,
+                        u.num?.toString().orEmpty(),
+                        u.area?.toString().orEmpty(),
+                        u.sustrato.orEmpty(),
+                        countsCell
+                    )
+                    sb.appendLine(row.joinToString(",") { csvEscape(it) })
                 }
             }
         }
 
-        val out = ByteArrayOutputStream()
-        workbook.write(out)
-        workbook.close()
-        return out.toByteArray()
+        return sb.toString().toByteArray(Charsets.UTF_8)
     }
 }

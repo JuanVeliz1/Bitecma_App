@@ -15,11 +15,21 @@ import com.bitecma.app.network.RegionDto
 import com.bitecma.app.network.RetrofitClient
 import com.bitecma.app.network.SectorAmerbDto
 import com.google.gson.Gson
+import kotlinx.coroutines.async
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 object DataManager {
     private const val PREFS = "bitecma_cache"
     private const val KEY_CACHE_V1 = "cache_v1"
     private val gson = Gson()
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var persistJob: Job? = null
 
     data class PendingTextFile(
         val name: String,
@@ -123,8 +133,13 @@ object DataManager {
             botesMaestros = botesMaestros.toList(),
             especiesMaestras = especiesMaestras.toList()
         )
-        val json = gson.toJson(payload)
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CACHE_V1, json).apply()
+        val appCtx = context.applicationContext
+        persistJob?.cancel()
+        persistJob = ioScope.launch {
+            delay(250)
+            val json = gson.toJson(payload)
+            appCtx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CACHE_V1, json).apply()
+        }
     }
 
     fun upsertOperacionInMemory(op: OperacionDto) {
@@ -238,53 +253,65 @@ object DataManager {
         val localById = (operacionesBd + operacionesLc).associateBy { it.id }
 
         val syncOk = runCatching {
-            val regRes = RetrofitClient.apiService.getRegiones()
-            if (regRes.isSuccessful && regRes.body()?.ok == true) {
-                regiones.clear()
-                regiones.addAll(regRes.body()?.data ?: emptyList())
-            }
+            coroutineScope {
+                val regDeferred = async { RetrofitClient.apiService.getRegiones() }
+                val secDeferred = async { RetrofitClient.apiService.getSectoresAmerb() }
+                val calDeferred = async { RetrofitClient.apiService.getCaletas() }
+                val opaDeferred = async { RetrofitClient.apiService.getOpas() }
+                val botesDeferred = async { RetrofitClient.apiService.getBotes() }
+                val especiesDeferred = async { RetrofitClient.apiService.getEspecies() }
+                val opsDeferred = async { RetrofitClient.apiService.getOperaciones() }
 
-            val secRes = RetrofitClient.apiService.getSectoresAmerb()
-            if (secRes.isSuccessful && secRes.body()?.ok == true) {
-                sectoresAmerb.clear()
-                sectoresAmerb.addAll(secRes.body()?.data ?: emptyList())
-            }
+                val regRes = regDeferred.await()
+                if (regRes.isSuccessful && regRes.body()?.ok == true) {
+                    regiones.clear()
+                    regiones.addAll(regRes.body()?.data ?: emptyList())
+                }
 
-            val calRes = RetrofitClient.apiService.getCaletas()
-            if (calRes.isSuccessful && calRes.body()?.ok == true) {
-                caletas.clear()
-                caletas.addAll(calRes.body()?.data ?: emptyList())
-            }
+                val secRes = secDeferred.await()
+                if (secRes.isSuccessful && secRes.body()?.ok == true) {
+                    sectoresAmerb.clear()
+                    sectoresAmerb.addAll(secRes.body()?.data ?: emptyList())
+                }
 
-            val opaRes = RetrofitClient.apiService.getOpas()
-            if (opaRes.isSuccessful && opaRes.body()?.ok == true) {
-                opas.clear()
-                opas.addAll(opaRes.body()?.data ?: emptyList())
-            }
+                val calRes = calDeferred.await()
+                if (calRes.isSuccessful && calRes.body()?.ok == true) {
+                    caletas.clear()
+                    caletas.addAll(calRes.body()?.data ?: emptyList())
+                }
 
-            val botesRes = RetrofitClient.apiService.getBotes()
-            if (botesRes.isSuccessful && botesRes.body()?.ok == true) {
-                botesMaestros.clear()
-                botesMaestros.addAll(botesRes.body()?.data ?: emptyList())
-            }
+                val opaRes = opaDeferred.await()
+                if (opaRes.isSuccessful && opaRes.body()?.ok == true) {
+                    opas.clear()
+                    opas.addAll(opaRes.body()?.data ?: emptyList())
+                }
 
-            val especiesRes = RetrofitClient.apiService.getEspecies()
-            if (especiesRes.isSuccessful && especiesRes.body()?.ok == true) {
-                especiesMaestras.clear()
-                especiesMaestras.addAll(especiesRes.body()?.data ?: emptyList())
-            }
+                val botesRes = botesDeferred.await()
+                if (botesRes.isSuccessful && botesRes.body()?.ok == true) {
+                    botesMaestros.clear()
+                    botesMaestros.addAll(botesRes.body()?.data ?: emptyList())
+                }
 
-            val opsRes = RetrofitClient.apiService.getOperaciones()
-            if (opsRes.isSuccessful && opsRes.body()?.ok == true) {
-                val serverOps = opsRes.body()?.data ?: emptyList()
-                val serverIds = serverOps.map { it.id }.toSet()
-                operacionesBd.clear()
-                operacionesBd.addAll(serverOps.map { op ->
-                    if (dirtySet.contains(op.id)) localById[op.id] ?: op else op
-                })
-                operacionesLc.removeAll { it.id in serverIds }
-            }
+                val especiesRes = especiesDeferred.await()
+                if (especiesRes.isSuccessful && especiesRes.body()?.ok == true) {
+                    val data = especiesRes.body()?.data ?: emptyList()
+                    especiesMaestras.clear()
+                    especiesMaestras.addAll(data)
+                    especies.clear()
+                    especies.addAll(data.map { e -> EspecieMaestra(e.id, e.com, e.sci ?: "") })
+                }
 
+                val opsRes = opsDeferred.await()
+                if (opsRes.isSuccessful && opsRes.body()?.ok == true) {
+                    val serverOps = opsRes.body()?.data ?: emptyList()
+                    val serverIds = serverOps.map { it.id }.toSet()
+                    operacionesBd.clear()
+                    operacionesBd.addAll(serverOps.map { op ->
+                        if (dirtySet.contains(op.id)) localById[op.id] ?: op else op
+                    })
+                    operacionesLc.removeAll { it.id in serverIds }
+                }
+            }
             true
         }.getOrElse {
             false

@@ -235,6 +235,7 @@ data class OperacionBoteDto(
     val nombre: String? = null,
     val buzo: String? = null,
     val densTipo: String? = null,
+    val submareal: Int? = null,
     val boteMaestroId: Int? = null,
     val lpMuestras: Map<String, Map<String, List<LpSampleDto>>>? = null,
     val transectos: List<DensidadUnidadDto>? = null

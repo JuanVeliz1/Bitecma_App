@@ -92,7 +92,7 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
         pendingSaveBytes = null
     }
 
-    val saveXlsxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
+    val saveXlsxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         val name = pendingSaveName
         val bytes = pendingSaveBytes
         if (uri != null && name != null && bytes != null) {
@@ -241,11 +241,11 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
                             isLoading = true
                             try {
                                 val bytes = ExcelExporter.generateOperacionExcel(op)
-                                pendingSaveName = "Reporte_${op.id}.xlsx"
+                                pendingSaveName = "Reporte_${op.id}.csv"
                                 pendingSaveBytes = bytes
                                 saveXlsxLauncher.launch(pendingSaveName!!)
                             } catch (e: Exception) {
-                                error = "Error al generar Excel: ${e.message}"
+                                error = "Error al generar reporte: ${e.message}"
                             } finally {
                                 isLoading = false
                             }
@@ -260,7 +260,7 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
             ) {
                 Icon(Icons.Default.Download, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Generar reporte .xlsx")
+                Text("Generar reporte .csv")
             }
 
             Spacer(modifier = Modifier.height(12.dp))

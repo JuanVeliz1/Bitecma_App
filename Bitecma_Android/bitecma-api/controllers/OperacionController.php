@@ -17,6 +17,18 @@ function op_send($status, $payload)
     exit;
 }
 
+function op_send_db_error(Throwable $e)
+{
+    if ($e instanceof PDOException) {
+        $info = is_array($e->errorInfo ?? null) ? $e->errorInfo : null;
+        $driverCode = is_array($info) ? (int)($info[1] ?? 0) : 0;
+        if ($driverCode === 1451) op_send(409, ['ok' => false, 'error' => 'No se puede completar la operación: existen registros relacionados.']);
+        if ($driverCode === 1452) op_send(400, ['ok' => false, 'error' => 'Referencia inválida: el registro relacionado no existe.']);
+        if ($driverCode === 1062) op_send(409, ['ok' => false, 'error' => 'Conflicto: registro duplicado.']);
+    }
+    op_send(500, ['ok' => false, 'error' => 'Error guardando operación']);
+}
+
 $db = getDB();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $authPayload = null;
@@ -49,7 +61,7 @@ if ($method === 'POST') {
         op_send(201, ['ok' => true, 'data' => $created]);
     } catch (Throwable $e) {
         if ($db->inTransaction()) $db->rollBack();
-        op_send(500, ['ok' => false, 'error' => 'Error guardando operación']);
+        op_send_db_error($e);
     }
 }
 
@@ -71,7 +83,7 @@ if ($method === 'PUT') {
         op_send(200, ['ok' => true, 'data' => $updated]);
     } catch (Throwable $e) {
         if ($db->inTransaction()) $db->rollBack();
-        op_send(500, ['ok' => false, 'error' => 'Error guardando operación']);
+        op_send_db_error($e);
     }
 }
 
@@ -88,9 +100,13 @@ if ($method === 'DELETE') {
         op_send(200, ['ok' => true]);
     } catch (Throwable $e) {
         if ($db->inTransaction()) $db->rollBack();
+        if ($e instanceof PDOException) {
+            $info = is_array($e->errorInfo ?? null) ? $e->errorInfo : null;
+            $driverCode = is_array($info) ? (int)($info[1] ?? 0) : 0;
+            if ($driverCode === 1451) op_send(409, ['ok' => false, 'error' => 'No se puede eliminar: existen registros relacionados.']);
+        }
         op_send(500, ['ok' => false, 'error' => 'Error eliminando operación']);
     }
 }
 
 op_send(405, ['ok' => false, 'error' => 'Método no permitido']);
-

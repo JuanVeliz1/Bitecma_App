@@ -19,9 +19,7 @@ import androidx.navigation.NavController
 import androidx.compose.ui.text.style.TextAlign
 import com.bitecma.app.data.DataManager
 import com.bitecma.app.data.AppState
-import com.bitecma.app.data.EspecieMaestra
 import com.bitecma.app.network.OperacionDto
-import com.bitecma.app.network.RetrofitClient
 import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 
@@ -58,47 +56,41 @@ fun DashboardScreen(
     val ctx = LocalContext.current
     var isConnecting by remember { mutableStateOf(false) }
     
-    val opsBd = DataManager.operacionesBd
-    val opsLc = DataManager.operacionesLc
-    val opsAll by remember { derivedStateOf { opsBd.toList() + opsLc.toList() } }
-
+    val opsAll by remember { derivedStateOf { DataManager.operacionesBd.toList() + DataManager.operacionesLc.toList() } }
     val totalOps = opsAll.size
-    val totalMuestras = countLpMuestras(opsAll)
-    val unidadesDensidad = countDensidadUnidades(opsAll)
+    val totalMuestras = remember(opsAll) { countLpMuestras(opsAll) }
+    val unidadesDensidad = remember(opsAll) { countDensidadUnidades(opsAll) }
 
-    LaunchedEffect(Unit, AppState.forceOffline) {
-        if (AppState.forceOffline) return@LaunchedEffect
-        try {
-            val especiesRes = RetrofitClient.apiService.getEspecies()
-            if (especiesRes.isSuccessful) {
-                AppState.isOnline = true
-                val body = especiesRes.body()
-                if (body?.ok == true && body.data != null) {
-                    DataManager.especies.clear()
-                    DataManager.especies.addAll(
-                        body.data.map { e ->
-                            EspecieMaestra(e.id, e.com, e.sci ?: "")
+    val speciesNameById by remember {
+        derivedStateOf { DataManager.especies.associate { it.id to it.nombreComun } }
+    }
+
+    val topSpecies by remember {
+        derivedStateOf {
+            val totals = mutableMapOf<Int, Int>()
+            for (op in opsAll) {
+                for (b in op.botes ?: emptyList()) {
+                    for (t in b.transectos ?: emptyList()) {
+                        for ((k, v) in (t.counts ?: emptyMap())) {
+                            val id = k.toIntOrNull() ?: continue
+                            totals[id] = (totals[id] ?: 0) + v
                         }
-                    )
+                    }
                 }
-            } else {
-                AppState.isOnline = false
             }
-
-            val opsRes = RetrofitClient.apiService.getOperaciones()
-            if (opsRes.isSuccessful) {
-                AppState.isOnline = true
-                val body = opsRes.body()
-                if (body?.ok == true) {
-                    DataManager.operacionesBd.clear()
-                    DataManager.operacionesBd.addAll(body.data ?: emptyList())
-                }
-            } else {
-                AppState.isOnline = false
-            }
-        } catch (_: Exception) {
-            AppState.isOnline = false
+            val top = totals.entries
+                .sortedByDescending { it.value }
+                .take(5)
+                .map { it.key to it.value }
+            val maxVal = (top.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
+            top to maxVal
         }
+    }
+
+    LaunchedEffect(AppState.forceOffline, AppState.authToken) {
+        if (AppState.forceOffline) return@LaunchedEffect
+        if (AppState.authToken.isNullOrBlank()) return@LaunchedEffect
+        runCatching { DataManager.syncAllFromServer(ctx) }
     }
 
     ModalNavigationDrawer(
@@ -374,20 +366,8 @@ fun DashboardScreen(
 
                 // Recent Operations y Gráfico (Replica Foto 3)
                 item {
-                    val speciesNameById = DataManager.especies.associate { it.id to it.nombreComun }
-                    val totals = mutableMapOf<Int, Int>()
-                    for (op in opsAll) {
-                        for (b in op.botes ?: emptyList()) {
-                            for (t in b.transectos ?: emptyList()) {
-                                for ((k, v) in (t.counts ?: emptyMap())) {
-                                    val id = k.toIntOrNull() ?: continue
-                                    totals[id] = (totals[id] ?: 0) + v
-                                }
-                            }
-                        }
-                    }
-                    val top = totals.entries.sortedByDescending { it.value }.take(5)
-                    val maxVal = (top.maxOfOrNull { it.value } ?: 0).coerceAtLeast(1)
+                    val top = topSpecies.first
+                    val maxVal = topSpecies.second
 
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                         val isCompact = maxWidth < 700.dp

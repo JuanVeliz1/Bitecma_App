@@ -38,6 +38,13 @@ fun LoginScreen(navController: NavController) {
     var errorMessage by remember { mutableStateOf("") }
     var successMessage by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(email, password) {
+        if (errorMessage.isNotEmpty() || successMessage.isNotEmpty()) {
+            errorMessage = ""
+            successMessage = ""
+        }
+    }
     
     // Check if the user is a known user or has a last login record
     val trimmedEmail = email.trim()
@@ -157,6 +164,7 @@ fun LoginScreen(navController: NavController) {
                             isLoading = true
                             errorMessage = ""
                             try {
+                                AppState.clearSession(ctx)
                                 // 1. INTENTO DE LOGIN ONLINE (CPANEL)
                                 val response = RetrofitClient.apiService.login(AuthLoginRequest(correo = e, password = p))
                                 
@@ -182,10 +190,18 @@ fun LoginScreen(navController: NavController) {
                                     } else {
                                         // Servidor respondió pero con error (ej: contraseña incorrecta en API)
                                         errorMessage = body.error ?: "Credenciales de API inválidas"
+                                        isLoading = false
+                                        return@launch
                                     }
                                 } else {
                                     // Error de servidor (404, 500, etc)
-                                    errorMessage = "Error en servidor Bitecma (${response.code()})"
+                                    val code = response.code()
+                                    if (code == 401 || code == 403) {
+                                        errorMessage = "Correo o contraseña incorrectos (API)"
+                                        isLoading = false
+                                        return@launch
+                                    }
+                                    errorMessage = "Error en servidor Bitecma ($code). Intentando local..."
                                 }
                             } catch (ex: Exception) {
                                 // Error de red (Sin internet, URL mal, etc) - NO CIERRA LA APP
@@ -208,8 +224,10 @@ fun LoginScreen(navController: NavController) {
                                     popUpTo("login") { inclusive = true }
                                 }
                             } else {
-                                if (errorMessage.isEmpty() || errorMessage.contains("Intentando local")) {
-                                    errorMessage = "Correo o contraseña incorrectos localmente"
+                                if (errorMessage.isEmpty() || errorMessage.contains("Intentando local", ignoreCase = true)) {
+                                    errorMessage = "Correo o contraseña incorrectos (local)"
+                                } else {
+                                    errorMessage = errorMessage.trim()
                                 }
                             }
                             isLoading = false

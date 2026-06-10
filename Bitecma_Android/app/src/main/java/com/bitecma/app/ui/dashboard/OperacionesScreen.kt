@@ -1269,7 +1269,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
 
                         currentOpForBotes = finalOp
                         botesList.clear()
-                        botesList.add(OperacionBoteDto(zona = 1, densTipo = "Transecto"))
+                        botesList.add(OperacionBoteDto(zona = 1, densTipo = "Transecto", submareal = 1))
                         showBotesDialog = true
                     }
                 }) { Text("SI") }
@@ -1391,7 +1391,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedButton(
-                            onClick = { botesList.add(OperacionBoteDto(zona = botesList.size + 1, densTipo = "Transecto")) },
+                            onClick = { botesList.add(OperacionBoteDto(zona = botesList.size + 1, densTipo = "Transecto", submareal = 1)) },
                             modifier = Modifier.height(52.dp),
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.5.dp, Color(0xFF003366))
@@ -1420,8 +1420,8 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                     validationError = "Debe agregar al menos un bote"
                                     return@Button
                                 }
-                                if (updatedBotesUi.any { it.nombre.isNullOrBlank() }) {
-                                    validationError = "Todos los botes deben tener un nombre (Bote Maestro)"
+                                if (updatedBotesUi.any { (it.submareal ?: 1) != 0 && it.nombre.isNullOrBlank() }) {
+                                    validationError = "Todos los botes submareales deben tener un nombre (Bote Maestro)"
                                     return@Button
                                 }
                                 if (updatedBotesUi.any { it.buzo.isNullOrBlank() }) {
@@ -1432,8 +1432,12 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                 validationError = null
                                 val updatedBotesApi = updatedBotesUi.map { b ->
                                     val dens = if (b.densTipo.equals("Cuadrante", true) || b.densTipo.equals("cuadrante", true)) "cuadrante" else "transecto"
+                                    val isIntermareal = b.submareal == 0 || b.nombre?.equals("Intermareal", ignoreCase = true) == true
                                     b.copy(
                                         densTipo = dens,
+                                        submareal = if (isIntermareal) 0 else 1,
+                                        boteMaestroId = if (isIntermareal) null else b.boteMaestroId,
+                                        nombre = if (isIntermareal) "Intermareal" else b.nombre,
                                         transectos = b.transectos?.map { t ->
                                             t.copy(tipo = if (dens == "cuadrante") "cuadrante" else "transecto")
                                         }
@@ -1796,6 +1800,7 @@ private fun OperacionCard(
 @Composable
 fun BoteItem(bote: OperacionBoteDto, onClick: () -> Unit) {
     val transectCount = bote.transectos?.size ?: 0
+    val isIntermareal = bote.submareal == 0 || bote.nombre?.equals("Intermareal", ignoreCase = true) == true
     
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
@@ -1804,7 +1809,12 @@ fun BoteItem(bote: OperacionBoteDto, onClick: () -> Unit) {
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.DirectionsBoat, contentDescription = null, tint = Color(0xFF003366), modifier = Modifier.size(36.dp))
+            Icon(
+                if (isIntermareal) Icons.Default.DirectionsWalk else Icons.Default.DirectionsBoat,
+                contentDescription = null,
+                tint = Color(0xFF003366),
+                modifier = Modifier.size(36.dp)
+            )
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = bote.nombre?.uppercase() ?: "BOTE SIN NOMBRE", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = Color.Black)
@@ -1985,6 +1995,7 @@ fun BoteRowItem(
     val comboText = if (isDark) Color.White else Color.Black
     val comboBorder = if (isDark) Color(0xFF1976D2) else Color(0xFFF1F3F5)
     val labelColor = if (isDark) Color(0xFFBBDEFB) else Color.Gray
+    val isIntermareal = bote.submareal == 0 || bote.nombre?.equals("Intermareal", ignoreCase = true) == true
 
     Row(
         modifier = Modifier
@@ -2014,22 +2025,47 @@ fun BoteRowItem(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { showBoteSearch = true }
+                    .clickable(enabled = !isIntermareal) { showBoteSearch = true }
                     .border(1.5.dp, comboBorder, RoundedCornerShape(8.dp))
                     .background(comboBg, RoundedCornerShape(8.dp))
                     .padding(10.dp),
                 color = Color.Transparent
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconToggleButton(
+                        checked = isIntermareal,
+                        onCheckedChange = { checked ->
+                            if (checked) {
+                                onUpdate(bote.copy(submareal = 0, nombre = "Intermareal", boteMaestroId = null))
+                            } else {
+                                onUpdate(bote.copy(submareal = 1, nombre = null, boteMaestroId = null))
+                            }
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        val iconTint = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366)
+                        Icon(
+                            if (isIntermareal) Icons.Default.DirectionsWalk else Icons.Default.DirectionsBoat,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                     Text(
-                        bote.nombre ?: "Seleccionar Bote", 
+                        when {
+                            isIntermareal -> "Intermareal (a pie)"
+                            bote.nombre.isNullOrBlank() -> "Submareal (en bote) — seleccionar bote"
+                            else -> "Submareal (en bote) — ${bote.nombre}"
+                        },
                         fontSize = 13.sp, 
-                        fontWeight = if (bote.nombre != null) FontWeight.Bold else FontWeight.Normal,
-                        color = if (bote.nombre != null) comboText else labelColor,
+                        fontWeight = if (isIntermareal || bote.nombre != null) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isIntermareal || bote.nombre != null) comboText else labelColor,
                         maxLines = 1,
                         modifier = Modifier.weight(1f)
                     )
-                    Icon(Icons.Default.Search, null, tint = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366), modifier = Modifier.size(16.dp))
+                    if (!isIntermareal) {
+                        Icon(Icons.Default.Search, null, tint = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366), modifier = Modifier.size(16.dp))
+                    }
                 }
             }
             if (showBoteSearch) { 
@@ -2037,7 +2073,7 @@ fun BoteRowItem(
                     botes = botesMaestros, 
                     operationRegionRom = operationRegionRom,
                     operationCaleta = operationCaleta,
-                    onSelect = { m -> onUpdate(bote.copy(nombre = m.nombre, boteMaestroId = m.id)); showBoteSearch = false }, 
+                    onSelect = { m -> onUpdate(bote.copy(nombre = m.nombre, boteMaestroId = m.id, submareal = 1)); showBoteSearch = false }, 
                     onDismiss = { showBoteSearch = false }
                 ) 
             }
