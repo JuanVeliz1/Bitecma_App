@@ -10,6 +10,9 @@ import java.time.format.DateTimeFormatter
 
 object AppState {
     var isOnline by mutableStateOf(false)
+    var hasNetwork by mutableStateOf(false)
+    var lastSyncAtMs by mutableStateOf<Long?>(null)
+    var lastSyncError by mutableStateOf<String?>(null)
     
     var currentUserId by mutableStateOf<Int?>(null)
 
@@ -19,6 +22,8 @@ object AppState {
     var currentUserName by mutableStateOf<String?>(null)
     var currentUserRole by mutableStateOf<String?>(null)
     var forceOffline by mutableStateOf(false)
+    var hasVerifiedSession by mutableStateOf(false)
+    var isGuestMode by mutableStateOf(false)
 
     private const val PREFS = "bitecma_prefs"
     private const val KEY_TOKEN = "auth_token"
@@ -27,6 +32,8 @@ object AppState {
     private const val KEY_NAME = "auth_name"
     private const val KEY_ROLE = "auth_role"
     private const val KEY_FORCE_OFFLINE = "force_offline"
+    private const val KEY_VERIFIED_SESSION = "verified_session"
+    private const val KEY_GUEST_MODE = "guest_mode"
 
     private fun lastLoginKey(email: String): String = "last_login_" + email.trim().lowercase()
 
@@ -38,11 +45,22 @@ object AppState {
         currentUserEmail = sp.getString(KEY_EMAIL, null)
         currentUserName = sp.getString(KEY_NAME, null)
         currentUserRole = sp.getString(KEY_ROLE, null)
+        hasVerifiedSession = sp.getBoolean(KEY_VERIFIED_SESSION, false)
+        isGuestMode = sp.getBoolean(KEY_GUEST_MODE, false)
         forceOffline = sp.getBoolean(KEY_FORCE_OFFLINE, false)
-        if (!isBitecmaUser()) {
+        if (!hasAuthenticatedSession()) {
+            hasVerifiedSession = false
             forceOffline = false
+            authToken = null
         }
-        isOnline = !authToken.isNullOrBlank()
+        if (!hasAuthenticatedSession() && !isGuestMode) {
+            currentUserId = null
+            currentUserEmail = null
+            currentUserName = null
+            currentUserRole = null
+        }
+        hasNetwork = false
+        isOnline = false
     }
 
     fun persistSession(context: Context) {
@@ -58,13 +76,43 @@ object AppState {
         if (name.isNullOrBlank()) ed.remove(KEY_NAME) else ed.putString(KEY_NAME, name)
         val role = currentUserRole
         if (role.isNullOrBlank()) ed.remove(KEY_ROLE) else ed.putString(KEY_ROLE, role)
-        if (isBitecmaUser()) {
+        if (hasAuthenticatedSession()) {
+            ed.putBoolean(KEY_VERIFIED_SESSION, true)
             ed.putBoolean(KEY_FORCE_OFFLINE, forceOffline)
+            ed.remove(KEY_GUEST_MODE)
+            isGuestMode = false
+        } else if (isGuestMode) {
+            ed.remove(KEY_TOKEN)
+            ed.remove(KEY_UID)
+            ed.remove(KEY_EMAIL)
+            ed.remove(KEY_NAME)
+            ed.remove(KEY_ROLE)
+            ed.remove(KEY_VERIFIED_SESSION)
+            ed.remove(KEY_FORCE_OFFLINE)
+            ed.putBoolean(KEY_GUEST_MODE, true)
+            forceOffline = false
         } else {
+            hasVerifiedSession = false
+            isGuestMode = false
+            ed.remove(KEY_VERIFIED_SESSION)
             forceOffline = false
             ed.remove(KEY_FORCE_OFFLINE)
+            ed.remove(KEY_GUEST_MODE)
         }
         ed.apply()
+    }
+
+    fun enterGuestMode(context: Context) {
+        authToken = null
+        currentUserId = null
+        currentUserEmail = null
+        currentUserName = "Modo sin cuenta"
+        currentUserRole = null
+        forceOffline = false
+        hasVerifiedSession = false
+        isGuestMode = true
+        isOnline = false
+        persistSession(context)
     }
 
     fun clearSession(context: Context) {
@@ -74,18 +122,29 @@ object AppState {
         currentUserName = null
         currentUserRole = null
         forceOffline = false
+        hasVerifiedSession = false
+        isGuestMode = false
+        hasNetwork = false
         isOnline = false
+        lastSyncAtMs = null
+        lastSyncError = null
         val sp = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        sp.edit().remove(KEY_TOKEN).remove(KEY_UID).remove(KEY_EMAIL).remove(KEY_NAME).remove(KEY_ROLE).remove(KEY_FORCE_OFFLINE).apply()
+        sp.edit().remove(KEY_TOKEN).remove(KEY_UID).remove(KEY_EMAIL).remove(KEY_NAME).remove(KEY_ROLE).remove(KEY_FORCE_OFFLINE).remove(KEY_VERIFIED_SESSION).remove(KEY_GUEST_MODE).apply()
     }
 
     fun isEffectivelyOnline(): Boolean {
-        return !forceOffline && isOnline && !authToken.isNullOrBlank()
+        return !forceOffline && hasNetwork && isOnline && !authToken.isNullOrBlank()
     }
 
-    fun isBitecmaUser(): Boolean {
-        return currentUserEmail?.equals("bitecma@bitecma.cl", ignoreCase = true) == true
+    fun hasAuthenticatedSession(): Boolean {
+        return hasVerifiedSession && currentUserId != null && !currentUserEmail.isNullOrBlank()
     }
+
+    fun hasAppAccess(): Boolean {
+        return hasAuthenticatedSession() || isGuestMode
+    }
+
+    fun dashboardUserId(): Int = currentUserId ?: 0
 
 
     fun saveLastLoginNow(context: Context, email: String) {
@@ -101,5 +160,16 @@ object AppState {
         if (ms <= 0L) return null
         val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
         return fmt.format(Instant.ofEpochMilli(ms))
+    }
+
+    fun registerSyncSuccess() {
+        isOnline = true
+        lastSyncError = null
+        lastSyncAtMs = System.currentTimeMillis()
+    }
+
+    fun registerSyncFailure(message: String? = null) {
+        isOnline = false
+        lastSyncError = message?.trim()?.takeIf { it.isNotEmpty() }
     }
 }

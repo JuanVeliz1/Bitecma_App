@@ -1,6 +1,8 @@
 package com.bitecma.app.network
 
+import com.bitecma.app.BuildConfig
 import com.bitecma.app.data.AppState
+import com.google.gson.annotations.SerializedName
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -11,6 +13,7 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.PUT
 import retrofit2.http.Query
+import java.util.concurrent.TimeUnit
 
 data class ApiEnvelope<T>(
     val ok: Boolean? = false,
@@ -92,7 +95,9 @@ data class EspecieDto(
 
 data class SectorAmerbDto(
     val id: Int,
+    @SerializedName(value = "nombre", alternate = ["nombreamerb"])
     val nombre: String,
+    @SerializedName(value = "region", alternate = ["region_id", "regionId"])
     val region: Int? = null,
     val comuna: String? = null
 )
@@ -100,7 +105,9 @@ data class SectorAmerbDto(
 data class CaletaDto(
     val id: Int? = null,
     val nombre: String,
+    @SerializedName(value = "region", alternate = ["region_id", "regionId"])
     val region: Int? = null,
+    @SerializedName(value = "sectorAmerbId", alternate = ["sector_amerb_id", "sectorAmerb_id", "sectorId"])
     val sectorAmerbId: Int? = null
 )
 
@@ -108,6 +115,7 @@ data class OpaDto(
     val id: Int,
     val nombre: String,
     val nombrecorto: String? = null,
+    @SerializedName(value = "region", alternate = ["region_id", "regionId"])
     val region: Int? = null,
     val comuna: String? = null
 )
@@ -279,7 +287,7 @@ data class UploadTextFileRequest(
 )
 
 object RetrofitClient {
-    private const val BASE_URL = "https://bitecma.cl/api/"
+    private const val DEFAULT_TIMEOUT_SECONDS = 20L
 
     val apiService: BitecmaApiService by lazy {
         val authInterceptor = Interceptor { chain ->
@@ -299,10 +307,14 @@ object RetrofitClient {
         val client = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(logger)
+            .connectTimeout(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
 
         retrofit2.Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(BuildConfig.API_BASE_URL)
             .client(client)
             .addConverterFactory(retrofit2.converter.gson.GsonConverterFactory.create())
             .build()

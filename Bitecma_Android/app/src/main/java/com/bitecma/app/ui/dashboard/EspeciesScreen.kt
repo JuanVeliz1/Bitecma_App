@@ -1,6 +1,7 @@
 package com.bitecma.app.ui.dashboard
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -8,25 +9,38 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.compose.foundation.text.KeyboardOptions
 import com.bitecma.app.data.DataManager
 import com.bitecma.app.data.EspecieMaestra
 import com.bitecma.app.data.AppState
 import com.bitecma.app.network.RetrofitClient
+import com.bitecma.app.ui.bitecmaAmberBg
+import com.bitecma.app.ui.bitecmaBorder
+import com.bitecma.app.ui.bitecmaCardBackground
+import com.bitecma.app.ui.bitecmaMutedText
+import com.bitecma.app.ui.bitecmaNavy
+import com.bitecma.app.ui.bitecmaSoftBackground
+import com.bitecma.app.ui.bitecmaSoftBackgroundAlt
+import com.bitecma.app.ui.bitecmaSubtleText
+import com.bitecma.app.ui.bitecmaTeal
+import com.bitecma.app.ui.bitecmaTealContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("UNUSED_PARAMETER")
 fun EspeciesScreen(navController: NavController, userId: Int) {
+    val colors = MaterialTheme.colorScheme
     var searchQuery by remember { mutableStateOf("") }
     var selectedEspecie by remember { mutableStateOf<EspecieMaestra?>(null) }
 
@@ -34,7 +48,7 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
 
     LaunchedEffect(Unit) {
         especiesData = DataManager.especies
-        if (AppState.forceOffline) return@LaunchedEffect
+        if (AppState.forceOffline || AppState.authToken.isNullOrBlank()) return@LaunchedEffect
         try {
             val res = RetrofitClient.apiService.getEspecies()
             if (res.isSuccessful && res.body()?.ok == true) {
@@ -56,21 +70,43 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
         it.nombreCientifico.contains(searchQuery, ignoreCase = true)
     }
 
+    val accessMessage = when {
+        AppState.isGuestMode -> "Modo sin cuenta: consultando especies guardadas en el dispositivo."
+        AppState.forceOffline || AppState.authToken.isNullOrBlank() -> "Sin sesion online: mostrando catalogo local."
+        else -> "Catalogo de especies listo para consulta."
+    }
+
+    val accessContainerColor = when {
+        AppState.isGuestMode -> colors.bitecmaAmberBg
+        AppState.forceOffline || AppState.authToken.isNullOrBlank() -> colors.bitecmaSoftBackgroundAlt
+        else -> colors.bitecmaTealContainer
+    }
+
+    val accessContentColor = when {
+        AppState.isGuestMode -> colors.bitecmaNavy
+        AppState.forceOffline || AppState.authToken.isNullOrBlank() -> colors.bitecmaSubtleText
+        else -> colors.bitecmaTeal
+    }
+
     if (selectedEspecie != null) {
         AlertDialog(
             onDismissRequest = { selectedEspecie = null },
-            title = { Text(selectedEspecie!!.nombreComun, fontWeight = FontWeight.Bold) },
+            containerColor = colors.bitecmaCardBackground,
+            title = { Text(selectedEspecie!!.nombreComun, fontWeight = FontWeight.Bold, color = colors.bitecmaNavy) },
             text = {
                 Column {
-                    Text("Nombre Científico:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
+                    Text("Nombre Científico:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = colors.bitecmaMutedText)
                     Text(selectedEspecie!!.nombreCientifico, fontSize = 16.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Código:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
+                    Text("Código:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = colors.bitecmaMutedText)
                     Text("ESP-${selectedEspecie!!.id.toString().padStart(3, '0')}", fontSize = 14.sp)
                 }
             },
             confirmButton = {
-                Button(onClick = { selectedEspecie = null }) {
+                Button(
+                    onClick = { selectedEspecie = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.bitecmaTeal)
+                ) {
                     Text("Entendido")
                 }
             }
@@ -80,13 +116,13 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Maestro de Especies", color = Color.White) },
+                title = { Text("Maestro de Especies", color = colors.onPrimary) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = colors.onPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.primary)
             )
         }
     ) { padding ->
@@ -97,44 +133,108 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
                 .background(MaterialTheme.colorScheme.background)
                 .padding(16.dp)
         ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = accessContainerColor,
+                border = BorderStroke(1.dp, colors.bitecmaBorder)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = accessContentColor)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(accessMessage, color = accessContentColor, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text("Filtrar por nombre común o científico...") },
                 modifier = Modifier.fillMaxWidth(),
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(14.dp),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = colors.bitecmaTeal,
+                    focusedLabelColor = colors.bitecmaTeal,
+                    unfocusedBorderColor = colors.bitecmaBorder,
+                    unfocusedLabelColor = colors.bitecmaMutedText,
+                    unfocusedContainerColor = colors.bitecmaSoftBackground,
+                    focusedContainerColor = colors.bitecmaCardBackground
+                )
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Cabecera Tabla Especies
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFF1F3F4), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                    .padding(12.dp)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = colors.bitecmaCardBackground,
+                border = BorderStroke(1.dp, colors.bitecmaBorder)
             ) {
-                Text("#", modifier = Modifier.weight(0.3f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                Text("NOMBRE COMÚN", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                Text("NOMBRE CIENTÍFICO", modifier = Modifier.weight(2f), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text("ESPECIES", style = MaterialTheme.typography.labelMedium, color = colors.bitecmaMutedText)
+                    Text(especies.size.toString(), style = MaterialTheme.typography.titleLarge, color = colors.bitecmaNavy)
+                    Text("Resultados para la busqueda actual", style = MaterialTheme.typography.bodySmall, color = colors.bitecmaSubtleText)
+                }
             }
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 items(especies) { esp ->
-                    Column {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.bitecmaCardBackground,
+                        border = BorderStroke(1.dp, colors.bitecmaBorder)
+                    ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { selectedEspecie = esp }
-                                .padding(12.dp),
+                                .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(esp.id.toString(), modifier = Modifier.weight(0.3f), fontSize = 11.sp)
-                            Text(esp.nombreComun, modifier = Modifier.weight(1.5f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Text(esp.nombreCientifico, modifier = Modifier.weight(2f), fontSize = 11.sp, color = Color.Gray, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = colors.bitecmaTealContainer
+                            ) {
+                                Text(
+                                    esp.id.toString(),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    color = colors.bitecmaTeal,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(esp.nombreComun, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = colors.bitecmaNavy)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    esp.nombreCientifico.ifBlank { "Sin nombre cientifico" },
+                                    fontSize = 12.sp,
+                                    color = colors.bitecmaSubtleText,
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    "Codigo ESP-${esp.id.toString().padStart(3, '0')}",
+                                    fontSize = 11.sp,
+                                    color = colors.bitecmaMutedText
+                                )
+                            }
                         }
-                        HorizontalDivider(color = Color(0xFFEEEEEE))
                     }
                 }
             }

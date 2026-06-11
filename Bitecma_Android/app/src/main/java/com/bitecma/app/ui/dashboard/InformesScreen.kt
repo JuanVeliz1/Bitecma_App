@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,12 +15,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,12 +36,26 @@ import com.bitecma.app.utils.ExcelExporter
 import com.bitecma.app.network.OperacionDto
 import com.bitecma.app.network.RetrofitClient
 import com.bitecma.app.network.UploadTextFileRequest
+import com.bitecma.app.sync.SyncScheduler
+import com.bitecma.app.ui.bitecmaAmberBg
+import com.bitecma.app.ui.bitecmaBorder
+import com.bitecma.app.ui.bitecmaCardBackground
+import com.bitecma.app.ui.bitecmaDangerBg
+import com.bitecma.app.ui.bitecmaMutedText
+import com.bitecma.app.ui.bitecmaNavy
+import com.bitecma.app.ui.bitecmaSoftBackground
+import com.bitecma.app.ui.bitecmaSoftBackgroundAlt
+import com.bitecma.app.ui.bitecmaSubtleText
+import com.bitecma.app.ui.bitecmaSuccessBg
+import com.bitecma.app.ui.bitecmaTeal
+import com.bitecma.app.ui.bitecmaTealContainer
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("UNUSED_PARAMETER")
 fun DocumentosScreen(navController: NavController, userId: Int) {
+    val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var selectedOpId by remember { mutableStateOf<String?>(null) }
@@ -48,6 +65,29 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
 
     val opIds = remember(DataManager.operacionesBd.size, DataManager.operacionesLc.size) {
         (DataManager.operacionesBd.mapNotNull { it.id } + DataManager.operacionesLc.mapNotNull { it.id }).distinct()
+    }
+    val pendingFilesForSelection by remember(selectedOpId, DataManager.pendingTextFiles.size) {
+        derivedStateOf { DataManager.getPendingTextFiles(selectedOpId) }
+    }
+    val pendingCount = pendingFilesForSelection.size
+    val syncedCount = files.size
+
+    val accessMessage = when {
+        AppState.isGuestMode -> "Modo sin cuenta: los archivos quedan pendientes solo en este equipo hasta conectar una cuenta."
+        AppState.forceOffline || AppState.authToken.isNullOrBlank() -> "Modo offline: puedes guardar archivos localmente y se sincronizaran despues."
+        else -> "Conexion activa: puedes descargar y sincronizar documentos."
+    }
+
+    val accessContainerColor = when {
+        AppState.isGuestMode -> colors.bitecmaAmberBg
+        AppState.forceOffline || AppState.authToken.isNullOrBlank() -> colors.bitecmaSoftBackgroundAlt
+        else -> colors.bitecmaTealContainer
+    }
+
+    val accessContentColor = when {
+        AppState.isGuestMode -> colors.bitecmaNavy
+        AppState.forceOffline || AppState.authToken.isNullOrBlank() -> colors.bitecmaSubtleText
+        else -> colors.bitecmaTeal
     }
 
     var pendingSaveName by remember { mutableStateOf<String?>(null) }
@@ -186,13 +226,13 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Documentos", color = Color.White) },
+                title = { Text("Documentos", color = colors.onPrimary) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = colors.onPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.primary)
             )
         }
     ) { padding ->
@@ -203,20 +243,71 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
                 .background(MaterialTheme.colorScheme.background)
                 .padding(16.dp)
         ) {
-            Text("Documentación", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text("Sube/descarga archivos de texto", color = Color.Gray, fontSize = 12.sp)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = accessContainerColor,
+                border = BorderStroke(1.dp, colors.bitecmaBorder)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = accessContentColor)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(accessMessage, color = accessContentColor, style = MaterialTheme.typography.bodySmall)
+                }
+            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(16.dp),
+                    color = colors.bitecmaCardBackground,
+                    border = BorderStroke(1.dp, colors.bitecmaBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text("PENDIENTES", style = MaterialTheme.typography.labelMedium, color = colors.bitecmaMutedText)
+                        Text(pendingCount.toString(), style = MaterialTheme.typography.titleLarge, color = colors.bitecmaNavy)
+                        Text("Por sincronizar", style = MaterialTheme.typography.bodySmall, color = colors.bitecmaSubtleText)
+                    }
+                }
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(16.dp),
+                    color = colors.bitecmaCardBackground,
+                    border = BorderStroke(1.dp, colors.bitecmaBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text("SERVIDOR", style = MaterialTheme.typography.labelMedium, color = colors.bitecmaMutedText)
+                        Text(syncedCount.toString(), style = MaterialTheme.typography.titleLarge, color = colors.bitecmaNavy)
+                        Text("Sincronizados", style = MaterialTheme.typography.bodySmall, color = colors.bitecmaSubtleText)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             var opMenuExpanded by remember { mutableStateOf(false) }
             Box(modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(
                     onClick = { opMenuExpanded = true },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, colors.bitecmaBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = colors.bitecmaCardBackground,
+                        contentColor = colors.bitecmaNavy
+                    )
                 ) {
                     Text(selectedOpId ?: "General (sin operación)")
                 }
-                DropdownMenu(expanded = opMenuExpanded, onDismissRequest = { opMenuExpanded = false }) {
+                DropdownMenu(
+                    expanded = opMenuExpanded,
+                    onDismissRequest = { opMenuExpanded = false }
+                ) {
                     DropdownMenuItem(
                         text = { Text("General (sin operación)") },
                         onClick = { selectedOpId = null; opMenuExpanded = false }
@@ -256,7 +347,8 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isLoading && selectedOpId != null,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.bitecmaTeal)
             ) {
                 Icon(Icons.Default.Download, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -271,7 +363,8 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isLoading,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF003366))
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.bitecmaNavy)
             ) {
                 Icon(Icons.Default.UploadFile, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -280,7 +373,19 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
 
             if (error != null) {
                 Spacer(modifier = Modifier.height(10.dp))
-                Text(error ?: "", color = Color.Red, fontSize = 12.sp)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = colors.bitecmaDangerBg,
+                    border = BorderStroke(1.dp, colors.bitecmaBorder)
+                ) {
+                    Text(
+                        error ?: "",
+                        color = colors.error,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -291,26 +396,103 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
                 }
             }
 
-            if (!isLoading && files.isEmpty()) {
+            if (!isLoading && files.isEmpty() && pendingFilesForSelection.isEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    colors = CardDefaults.cardColors(containerColor = colors.bitecmaCardBackground),
+                    border = BorderStroke(1.dp, colors.bitecmaBorder)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Sin archivos", fontWeight = FontWeight.Bold)
-                        Text("Puedes subir un archivo .txt relacionado.", fontSize = 12.sp, color = Color.Gray)
+                        Text("Sin archivos", fontWeight = FontWeight.Bold, color = colors.bitecmaNavy)
+                        Text("Puedes subir un archivo .txt relacionado.", fontSize = 12.sp, color = colors.bitecmaSubtleText)
                     }
                 }
                 return@Column
             }
 
             LazyColumn(modifier = Modifier.weight(1f)) {
+                if (pendingFilesForSelection.isNotEmpty()) {
+                    item {
+                        Text(
+                            "Pendientes por sincronizar",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.bitecmaNavy,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                    items(pendingFilesForSelection, key = { it.id ?: it.name + (it.opId ?: "") }) { file ->
+                        val badge = when (file.estado) {
+                            DataManager.EstadoSyncArchivo.PENDIENTE -> Triple("PENDIENTE", colors.bitecmaAmberBg, colors.bitecmaNavy)
+                            DataManager.EstadoSyncArchivo.SINCRONIZANDO -> Triple("SINCRONIZANDO", colors.bitecmaSuccessBg, colors.bitecmaTeal)
+                            DataManager.EstadoSyncArchivo.ERROR -> Triple("ERROR", colors.bitecmaDangerBg, colors.error)
+                        }
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            colors = CardDefaults.cardColors(containerColor = colors.bitecmaCardBackground),
+                            border = BorderStroke(1.dp, colors.bitecmaBorder)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(file.name, fontWeight = FontWeight.Bold)
+                                    Surface(color = badge.second, shape = RoundedCornerShape(999.dp)) {
+                                        Text(
+                                            text = badge.first,
+                                            color = badge.third,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    val meta = listOfNotNull(
+                                        file.opId ?: "General",
+                                        file.ultimoError
+                                    ).joinToString(" · ")
+                                    if (meta.isNotBlank()) {
+                                        Text(meta, fontSize = 12.sp, color = if (file.ultimoError != null) colors.error else colors.bitecmaSubtleText)
+                                    }
+                                }
+                                Icon(
+                                    imageVector = if (file.estado == DataManager.EstadoSyncArchivo.ERROR) Icons.Default.ErrorOutline else Icons.Default.UploadFile,
+                                    contentDescription = null,
+                                    tint = badge.third
+                                )
+                                if (AppState.isEffectivelyOnline() && file.estado != DataManager.EstadoSyncArchivo.SINCRONIZANDO) {
+                                    IconButton(
+                                        onClick = {
+                                            val fileId = file.id ?: return@IconButton
+                                            DataManager.retryPendingTextFile(fileId)
+                                            DataManager.persistCache(ctx)
+                                            SyncScheduler.scheduleImmediate(ctx)
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Sync, contentDescription = "Reintentar")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (files.isNotEmpty()) {
+                    item {
+                        Text(
+                            "Archivos sincronizados",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.bitecmaNavy,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                }
                 items(files) { f ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        colors = CardDefaults.cardColors(containerColor = colors.bitecmaCardBackground),
+                        border = BorderStroke(1.dp, colors.bitecmaBorder)
                     ) {
                         Row(
                             modifier = Modifier.padding(16.dp),
@@ -319,7 +501,7 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(f.name, fontWeight = FontWeight.Bold)
                                 val meta = listOfNotNull(f.opId, f.createdAt, f.size?.let { "${it}B" }).joinToString(" · ")
-                                if (meta.isNotBlank()) Text(meta, fontSize = 12.sp, color = Color.Gray)
+                                if (meta.isNotBlank()) Text(meta, fontSize = 12.sp, color = colors.bitecmaSubtleText)
                             }
                             IconButton(
                                 enabled = !isLoading,

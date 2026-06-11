@@ -1,11 +1,18 @@
 package com.bitecma.app.data
 
 import android.content.Context
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
+import com.bitecma.app.data.local.LocalCacheDatabase
+import com.bitecma.app.data.local.LocalCacheSnapshot
+import com.bitecma.app.data.local.LocalCacheStore
+import com.bitecma.app.data.local.OperationSyncStateRecord
+import com.bitecma.app.data.local.PendingTextFileRecord
 import com.bitecma.app.network.BoteMaestroDto
 import com.bitecma.app.network.CaletaDto
 import com.bitecma.app.network.EspecieDto
 import com.bitecma.app.network.AuthLoginRequest
+import com.bitecma.app.network.ApiEnvelope
 import com.bitecma.app.network.UploadTextFileRequest
 import com.bitecma.app.network.OperacionUpsertRequest
 import com.bitecma.app.network.OperacionDto
@@ -14,6 +21,7 @@ import com.bitecma.app.network.OpaDto
 import com.bitecma.app.network.RegionDto
 import com.bitecma.app.network.RetrofitClient
 import com.bitecma.app.network.SectorAmerbDto
+import com.bitecma.app.sync.SyncScheduler
 import com.google.gson.Gson
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
@@ -23,19 +31,80 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import retrofit2.Response
+
+enum class OperacionSource {
+    BD,
+    LC,
+}
 
 object DataManager {
+    enum class EstadoSyncOperacion {
+        SOLO_LOCAL,
+        PENDIENTE,
+        SINCRONIZANDO,
+        ERROR,
+        SINCRONIZADO,
+    }
+
+    enum class EstadoSyncArchivo {
+        PENDIENTE,
+        SINCRONIZANDO,
+        ERROR,
+    }
+
+    data class EstadoSyncInfo(
+        val estado: EstadoSyncOperacion,
+        val ultimoError: String? = null,
+        val ultimoIntentoMs: Long? = null,
+        val ultimaSincronizacionMs: Long? = null,
+    )
+
     private const val PREFS = "bitecma_cache"
     private const val KEY_CACHE_V1 = "cache_v1"
+    private const val KEY_LAST_CATALOG_SYNC_MS = "last_catalog_sync_ms"
+    private const val CATALOG_SYNC_TTL_MS = 6 * 60 * 60 * 1000L
     private val gson = Gson()
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var persistJob: Job? = null
+    private val syncMutex = Mutex()
+    @Volatile
+    private var localStore: LocalCacheStore? = null
 
     data class PendingTextFile(
+        val id: String? = null,
         val name: String,
         val opId: String? = null,
-        val text: String
+        val text: String,
+        val estado: EstadoSyncArchivo = EstadoSyncArchivo.PENDIENTE,
+        val ultimoError: String? = null,
+        val ultimoIntentoMs: Long? = null,
+        val createdAt: Long = System.currentTimeMillis(),
     )
+
+    data class CatalogSnapshot(
+        val regiones: List<RegionDto> = emptyList(),
+        val sectoresAmerb: List<SectorAmerbDto> = emptyList(),
+        val caletas: List<CaletaDto> = emptyList(),
+        val opas: List<OpaDto> = emptyList(),
+        val botesMaestros: List<BoteMaestroDto> = emptyList(),
+        val especiesMaestras: List<EspecieDto> = emptyList(),
+    )
+
+    private data class RemoteSyncSnapshot(
+        val catalog: CatalogSnapshot,
+        val operaciones: List<OperacionDto>,
+    )
+
+    private fun <T> preferNonEmptyCatalog(remote: List<T>?, current: List<T>): List<T> {
+        return when {
+            remote == null -> current
+            remote.isEmpty() && current.isNotEmpty() -> current
+            else -> remote
+        }
+    }
 
     private data class CachePayload(
         val operacionesBd: List<OperacionDto> = emptyList(),
@@ -50,22 +119,9 @@ object DataManager {
         val especiesMaestras: List<EspecieDto> = emptyList()
     )
 
-    // Maestro de Botes
-    val botes = mutableStateListOf(
-        BoteMaestro("5MENTARIO", "RIQUELME", "963244", "1980", "I — Tarapacá"),
-        BoteMaestro("ABDON I", "CAVANCHA", "700599", "3490", "I — Tarapacá"),
-        BoteMaestro("ABRAHAM", "RIQUELME", "18200", "934", "I — Tarapacá"),
-        BoteMaestro("VICENTE ANDRÉS I", "CHAN-CHAN", "123456", "788", "XIV — Los Ríos")
-    )
+    val botes = mutableStateListOf<BoteMaestro>()
 
-    // Maestro de Especies
-    val especies = mutableStateListOf(
-        EspecieMaestra(1, "Loco", "Concholepas concholepas"),
-        EspecieMaestra(2, "Choro", "Choromytilus chorus"),
-        EspecieMaestra(5, "Erizo rojo", "Loxechinus albus"),
-        EspecieMaestra(7, "Lapa rosada", "Fissurella cumingi"),
-        EspecieMaestra(25, "Macha", "Mesodesma donacium")
-    )
+    val especies = mutableStateListOf<EspecieMaestra>()
 
     val regiones = mutableStateListOf<RegionDto>()
     val sectoresAmerb = mutableStateListOf<SectorAmerbDto>()
@@ -78,91 +134,454 @@ object DataManager {
 
     val dirtyOperacionIds = mutableStateListOf<String>()
     val pendingTextFiles = mutableStateListOf<PendingTextFile>()
+    val estadosSyncOperacion = mutableStateMapOf<String, EstadoSyncInfo>()
 
-    val operacionesLc = mutableStateListOf(
-        OperacionDto(
-            id = "OP-2026-001",
-            sector = "Chan-chan",
-            region = 14,
-            fechaInicio = "2026-04-21",
-            fechaFin = "2026-04-21",
-            botes = listOf(
-                OperacionBoteDto(nombre = "VICENTE ANDRÉS I", zona = 1, buzo = "CHINO", densTipo = "transecto"),
-                OperacionBoteDto(nombre = "DANIELITO I", zona = 2, buzo = "RAMÓN", densTipo = "cuadrante")
-            )
-        )
-    )
+    val operacionesLc = mutableStateListOf<OperacionDto>()
 
-    fun loadCache(context: Context) {
-        val sp = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val json = sp.getString(KEY_CACHE_V1, null) ?: return
-        val payload = runCatching { gson.fromJson(json, CachePayload::class.java) }.getOrNull() ?: return
-        operacionesBd.clear()
-        operacionesBd.addAll(payload.operacionesBd)
-        operacionesLc.clear()
-        operacionesLc.addAll(payload.operacionesLc)
-        dirtyOperacionIds.clear()
-        dirtyOperacionIds.addAll(payload.dirtyOperacionIds.distinct())
-        pendingTextFiles.clear()
-        pendingTextFiles.addAll(payload.pendingTextFiles)
-
-        regiones.clear()
-        regiones.addAll(payload.regiones)
-        sectoresAmerb.clear()
-        sectoresAmerb.addAll(payload.sectoresAmerb)
-        caletas.clear()
-        caletas.addAll(payload.caletas)
-        opas.clear()
-        opas.addAll(payload.opas)
-        botesMaestros.clear()
-        botesMaestros.addAll(payload.botesMaestros)
-        especiesMaestras.clear()
-        especiesMaestras.addAll(payload.especiesMaestras)
+    private fun cacheStore(context: Context): LocalCacheStore {
+        return localStore ?: synchronized(this) {
+            localStore ?: LocalCacheStore(LocalCacheDatabase.getInstance(context.applicationContext)).also { localStore = it }
+        }
     }
 
-    fun persistCache(context: Context) {
-        val payload = CachePayload(
-            operacionesBd = operacionesBd.toList(),
-            operacionesLc = operacionesLc.toList(),
-            dirtyOperacionIds = dirtyOperacionIds.toList(),
-            pendingTextFiles = pendingTextFiles.toList(),
+    private fun isSnapshotEmpty(snapshot: LocalCacheSnapshot): Boolean {
+        return snapshot.operacionesBd.isEmpty() &&
+            snapshot.operacionesLc.isEmpty() &&
+            snapshot.pendingTextFiles.isEmpty() &&
+            snapshot.regiones.isEmpty() &&
+            snapshot.sectoresAmerb.isEmpty() &&
+            snapshot.caletas.isEmpty() &&
+            snapshot.opas.isEmpty() &&
+            snapshot.botesMaestros.isEmpty() &&
+            snapshot.especiesMaestras.isEmpty()
+    }
+
+    private fun applySnapshot(snapshot: LocalCacheSnapshot) {
+        operacionesBd.clear()
+        operacionesBd.addAll(snapshot.operacionesBd)
+        operacionesLc.clear()
+        operacionesLc.addAll(snapshot.operacionesLc)
+        dirtyOperacionIds.clear()
+        dirtyOperacionIds.addAll(snapshot.dirtyOperacionIds.distinct())
+        estadosSyncOperacion.clear()
+        estadosSyncOperacion.putAll(
+            snapshot.operationSyncStates.associate { record ->
+                record.opId to EstadoSyncInfo(
+                    estado = record.status.toEstadoSyncOperacion(),
+                    ultimoError = record.lastError,
+                    ultimoIntentoMs = record.lastAttemptAt,
+                    ultimaSincronizacionMs = record.lastSuccessAt,
+                )
+            },
+        )
+        pendingTextFiles.clear()
+        pendingTextFiles.addAll(
+            snapshot.pendingTextFiles.map {
+                PendingTextFile(
+                    id = it.id,
+                    name = it.name,
+                    opId = it.opId,
+                    text = it.text,
+                    estado = it.status.toEstadoSyncArchivo(),
+                    ultimoError = it.lastError,
+                    ultimoIntentoMs = it.lastAttemptAt,
+                    createdAt = it.createdAt,
+                )
+            },
+        )
+
+        regiones.clear()
+        regiones.addAll(snapshot.regiones)
+        sectoresAmerb.clear()
+        sectoresAmerb.addAll(snapshot.sectoresAmerb)
+        caletas.clear()
+        caletas.addAll(snapshot.caletas)
+        opas.clear()
+        opas.addAll(snapshot.opas)
+        botesMaestros.clear()
+        botesMaestros.addAll(snapshot.botesMaestros)
+        especiesMaestras.clear()
+        especiesMaestras.addAll(snapshot.especiesMaestras)
+        refreshDerivedMasters()
+        normalizeSyncStates()
+    }
+
+    private fun refreshDerivedMasters() {
+        if (botesMaestros.isNotEmpty()) {
+            val mapped = botesMaestros.mapNotNull { b ->
+                val nombre = b.nombre?.trim().takeUnless { it.isNullOrEmpty() } ?: return@mapNotNull null
+                val regionLabel = listOfNotNull(b.region_rom, b.region).joinToString(" — ").ifBlank { "S/I" }
+                BoteMaestro(
+                    nombre = nombre,
+                    caleta = b.caleta?.ifBlank { "S/I" } ?: "S/I",
+                    rpa = b.nrpa?.ifBlank { "S/I" } ?: "S/I",
+                    matricula = b.nmatricula?.ifBlank { "S/I" } ?: "S/I",
+                    regionId = regionLabel,
+                )
+            }.distinctBy { it.nombre.uppercase() }
+            if (mapped.isNotEmpty()) {
+                botes.clear()
+                botes.addAll(mapped)
+            }
+        }
+
+        if (especiesMaestras.isNotEmpty()) {
+            especies.clear()
+            especies.addAll(
+                especiesMaestras.map { e ->
+                    EspecieMaestra(
+                        id = e.id,
+                        nombreComun = e.com,
+                        nombreCientifico = e.sci ?: "",
+                    )
+                },
+            )
+        }
+    }
+
+    fun getCatalogSnapshot(): CatalogSnapshot {
+        return CatalogSnapshot(
             regiones = regiones.toList(),
             sectoresAmerb = sectoresAmerb.toList(),
             caletas = caletas.toList(),
             opas = opas.toList(),
             botesMaestros = botesMaestros.toList(),
-            especiesMaestras = especiesMaestras.toList()
+            especiesMaestras = especiesMaestras.toList(),
+        )
+    }
+
+    private fun applyCatalogSnapshot(snapshot: CatalogSnapshot) {
+        regiones.clear()
+        regiones.addAll(snapshot.regiones)
+        sectoresAmerb.clear()
+        sectoresAmerb.addAll(snapshot.sectoresAmerb)
+        caletas.clear()
+        caletas.addAll(snapshot.caletas)
+        opas.clear()
+        opas.addAll(snapshot.opas)
+        botesMaestros.clear()
+        botesMaestros.addAll(snapshot.botesMaestros)
+        especiesMaestras.clear()
+        especiesMaestras.addAll(snapshot.especiesMaestras)
+        refreshDerivedMasters()
+    }
+
+    fun getRegionLabelMap(): Map<String, String> {
+        return regiones
+            .mapNotNull { region ->
+                val rom = region.rom?.trim().takeUnless { it.isNullOrBlank() } ?: return@mapNotNull null
+                rom to listOfNotNull(region.rom, region.nom).joinToString(" — ").ifBlank { "Región ${region.id}" }
+            }
+            .toMap()
+    }
+
+    private fun buildSnapshot(): LocalCacheSnapshot {
+        return LocalCacheSnapshot(
+            operacionesBd = operacionesBd.toList(),
+            operacionesLc = operacionesLc.toList(),
+            dirtyOperacionIds = dirtyOperacionIds.toList(),
+            operationSyncStates = estadosSyncOperacion.map { (opId, info) ->
+                OperationSyncStateRecord(
+                    opId = opId,
+                    status = info.estado.name,
+                    lastError = info.ultimoError,
+                    lastAttemptAt = info.ultimoIntentoMs,
+                    lastSuccessAt = info.ultimaSincronizacionMs,
+                )
+            },
+            pendingTextFiles = pendingTextFiles.toList().map {
+                PendingTextFileRecord(
+                    id = it.id ?: buildPendingFileId(it.name, it.opId, it.createdAt),
+                    name = it.name,
+                    opId = it.opId,
+                    text = it.text,
+                    status = it.estado.name,
+                    lastError = it.ultimoError,
+                    lastAttemptAt = it.ultimoIntentoMs,
+                    createdAt = it.createdAt,
+                )
+            },
+            regiones = regiones.toList(),
+            sectoresAmerb = sectoresAmerb.toList(),
+            caletas = caletas.toList(),
+            opas = opas.toList(),
+            botesMaestros = botesMaestros.toList(),
+            especiesMaestras = especiesMaestras.toList(),
+        )
+    }
+
+    suspend fun loadCache(context: Context) {
+        val roomSnapshot = runCatching { withContext(Dispatchers.IO) { cacheStore(context).loadSnapshot() } }.getOrNull()
+        if (roomSnapshot != null && !isSnapshotEmpty(roomSnapshot)) {
+            applySnapshot(roomSnapshot)
+            reconcileBackgroundSync(context)
+            return
+        }
+
+        val sp = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val json = sp.getString(KEY_CACHE_V1, null) ?: return
+        val payload = runCatching { gson.fromJson(json, CachePayload::class.java) }.getOrNull() ?: return
+        applySnapshot(
+            LocalCacheSnapshot(
+                operacionesBd = payload.operacionesBd,
+                operacionesLc = payload.operacionesLc,
+                dirtyOperacionIds = payload.dirtyOperacionIds.distinct(),
+                pendingTextFiles = payload.pendingTextFiles.map {
+                    PendingTextFileRecord(
+                        id = it.id ?: buildPendingFileId(it.name, it.opId, it.createdAt),
+                        name = it.name,
+                        opId = it.opId,
+                        text = it.text,
+                        status = it.estado.name,
+                        lastError = it.ultimoError,
+                        lastAttemptAt = it.ultimoIntentoMs,
+                        createdAt = it.createdAt,
+                    )
+                },
+                regiones = payload.regiones,
+                sectoresAmerb = payload.sectoresAmerb,
+                caletas = payload.caletas,
+                opas = payload.opas,
+                botesMaestros = payload.botesMaestros,
+                especiesMaestras = payload.especiesMaestras,
+            ),
+        )
+        persistCache(context)
+    }
+
+    fun persistCache(context: Context) {
+        val snapshot = buildSnapshot()
+        val payload = CachePayload(
+            operacionesBd = snapshot.operacionesBd,
+            operacionesLc = snapshot.operacionesLc,
+            dirtyOperacionIds = snapshot.dirtyOperacionIds,
+            pendingTextFiles = snapshot.pendingTextFiles.map {
+                PendingTextFile(
+                    id = it.id,
+                    name = it.name,
+                    opId = it.opId,
+                    text = it.text,
+                    estado = it.status.toEstadoSyncArchivo(),
+                    ultimoError = it.lastError,
+                    ultimoIntentoMs = it.lastAttemptAt,
+                    createdAt = it.createdAt,
+                )
+            },
+            regiones = snapshot.regiones,
+            sectoresAmerb = snapshot.sectoresAmerb,
+            caletas = snapshot.caletas,
+            opas = snapshot.opas,
+            botesMaestros = snapshot.botesMaestros,
+            especiesMaestras = snapshot.especiesMaestras
         )
         val appCtx = context.applicationContext
         persistJob?.cancel()
         persistJob = ioScope.launch {
             delay(250)
-            val json = gson.toJson(payload)
-            appCtx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_CACHE_V1, json).apply()
+            val saved = runCatching { cacheStore(appCtx).saveSnapshot(snapshot) }.isSuccess
+            val editor = appCtx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            if (saved) {
+                editor.remove(KEY_CACHE_V1).apply()
+            } else {
+                val json = gson.toJson(payload)
+                editor.putString(KEY_CACHE_V1, json).apply()
+            }
+            reconcileBackgroundSync(appCtx)
         }
+    }
+
+    fun hasPendingSyncWork(): Boolean {
+        return pendingTextFiles.isNotEmpty() ||
+            estadosSyncOperacion.values.any {
+                it.estado == EstadoSyncOperacion.SOLO_LOCAL ||
+                    it.estado == EstadoSyncOperacion.PENDIENTE ||
+                    it.estado == EstadoSyncOperacion.ERROR
+            }
+    }
+
+    fun shouldRunBackgroundSync(): Boolean {
+        return !AppState.forceOffline &&
+            AppState.hasAuthenticatedSession() &&
+            (AppState.hasNetwork || AppState.authToken != null || hasPendingSyncWork())
+    }
+
+    fun reconcileBackgroundSync(context: Context) {
+        SyncScheduler.reconcile(context.applicationContext, shouldRunBackgroundSync())
+    }
+
+    private fun hasCatalogData(): Boolean {
+        return regiones.isNotEmpty() ||
+            sectoresAmerb.isNotEmpty() ||
+            caletas.isNotEmpty() ||
+            opas.isNotEmpty() ||
+            botesMaestros.isNotEmpty() ||
+            especiesMaestras.isNotEmpty()
+    }
+
+    private fun shouldRefreshCatalogs(context: Context, force: Boolean = false): Boolean {
+        if (force || !hasCatalogData()) return true
+        val last = context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getLong(KEY_LAST_CATALOG_SYNC_MS, 0L)
+        return last <= 0L || (System.currentTimeMillis() - last) >= CATALOG_SYNC_TTL_MS
+    }
+
+    private fun markCatalogSyncSuccess(context: Context) {
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putLong(KEY_LAST_CATALOG_SYNC_MS, System.currentTimeMillis())
+            .apply()
+    }
+
+    fun getEstadoSyncOperacion(opId: String, source: OperacionSource? = null): EstadoSyncInfo {
+        return estadosSyncOperacion[opId] ?: when (source) {
+            OperacionSource.LC -> EstadoSyncInfo(EstadoSyncOperacion.SOLO_LOCAL)
+            else -> EstadoSyncInfo(EstadoSyncOperacion.SINCRONIZADO)
+        }
+    }
+
+    private fun normalizeSyncStates() {
+        deduplicateOperationSources()
+        val ids = (operacionesBd + operacionesLc).map { it.id }.toSet()
+        estadosSyncOperacion.keys.toList().filterNot { ids.contains(it) }.forEach { estadosSyncOperacion.remove(it) }
+
+        operacionesBd.forEach { op ->
+            val current = estadosSyncOperacion[op.id]
+            if (dirtyOperacionIds.contains(op.id)) {
+                if (current == null || current.estado == EstadoSyncOperacion.SINCRONIZADO) {
+                    estadosSyncOperacion[op.id] = EstadoSyncInfo(EstadoSyncOperacion.PENDIENTE)
+                }
+            } else if (current == null) {
+                estadosSyncOperacion[op.id] = EstadoSyncInfo(EstadoSyncOperacion.SINCRONIZADO)
+            }
+        }
+
+        operacionesLc.forEach { op ->
+            val current = estadosSyncOperacion[op.id]
+            if (current == null) {
+                estadosSyncOperacion[op.id] = EstadoSyncInfo(EstadoSyncOperacion.SOLO_LOCAL)
+            }
+        }
+    }
+
+    private fun markOperacionSyncing(opId: String) {
+        val current = estadosSyncOperacion[opId]
+        estadosSyncOperacion[opId] = EstadoSyncInfo(
+            estado = EstadoSyncOperacion.SINCRONIZANDO,
+            ultimoError = current?.ultimoError,
+            ultimoIntentoMs = System.currentTimeMillis(),
+            ultimaSincronizacionMs = current?.ultimaSincronizacionMs,
+        )
+    }
+
+    private fun markOperacionSyncSuccess(opId: String) {
+        estadosSyncOperacion[opId] = EstadoSyncInfo(
+            estado = EstadoSyncOperacion.SINCRONIZADO,
+            ultimoError = null,
+            ultimoIntentoMs = System.currentTimeMillis(),
+            ultimaSincronizacionMs = System.currentTimeMillis(),
+        )
+    }
+
+    fun markOperacionDirty(opId: String, esOperacionSoloLocal: Boolean = false) {
+        if (!dirtyOperacionIds.contains(opId)) {
+            dirtyOperacionIds.add(opId)
+        }
+        val current = estadosSyncOperacion[opId]
+        val isOnlyLocal = esOperacionSoloLocal || operacionesBd.none { it.id == opId }
+        estadosSyncOperacion[opId] = EstadoSyncInfo(
+            estado = if (isOnlyLocal) EstadoSyncOperacion.SOLO_LOCAL else EstadoSyncOperacion.PENDIENTE,
+            ultimoError = null,
+            ultimoIntentoMs = current?.ultimoIntentoMs,
+            ultimaSincronizacionMs = current?.ultimaSincronizacionMs,
+        )
+    }
+
+    fun markOperacionSyncError(opId: String, message: String = "No se pudo sincronizar") {
+        val current = estadosSyncOperacion[opId]
+        estadosSyncOperacion[opId] = EstadoSyncInfo(
+            estado = EstadoSyncOperacion.ERROR,
+            ultimoError = message,
+            ultimoIntentoMs = System.currentTimeMillis(),
+            ultimaSincronizacionMs = current?.ultimaSincronizacionMs,
+        )
     }
 
     fun upsertOperacionInMemory(op: OperacionDto) {
         val idxBd = operacionesBd.indexOfFirst { it.id == op.id }
         if (idxBd >= 0) {
-            operacionesBd[idxBd] = op
+            operacionesBd[idxBd] = mergeOperacionPreservingData(operacionesBd[idxBd], op)
+            normalizeSyncStates()
             return
         }
         val idxLc = operacionesLc.indexOfFirst { it.id == op.id }
         if (idxLc >= 0) {
-            operacionesLc[idxLc] = op
+            operacionesLc[idxLc] = mergeOperacionPreservingData(operacionesLc[idxLc], op)
         } else {
             operacionesLc.add(0, op)
         }
-    }
-
-    fun markOperacionDirty(opId: String) {
-        if (dirtyOperacionIds.contains(opId)) return
-        dirtyOperacionIds.add(opId)
+        normalizeSyncStates()
     }
 
     fun enqueueTextFile(req: UploadTextFileRequest) {
-        pendingTextFiles.add(PendingTextFile(name = req.name, opId = req.opId, text = req.text))
+        pendingTextFiles.add(
+            PendingTextFile(
+                id = buildPendingFileId(req.name, req.opId, System.currentTimeMillis()),
+                name = req.name,
+                opId = req.opId,
+                text = req.text,
+            ),
+        )
+    }
+
+    fun getPendingTextFiles(opId: String? = null): List<PendingTextFile> {
+        return pendingTextFiles
+            .filter { it.opId == opId }
+            .sortedByDescending { it.createdAt }
+    }
+
+    fun retryPendingTextFile(fileId: String) {
+        val idx = pendingTextFiles.indexOfFirst { it.id == fileId }
+        if (idx < 0) return
+        val current = pendingTextFiles[idx]
+        pendingTextFiles[idx] = current.copy(
+            estado = EstadoSyncArchivo.PENDIENTE,
+            ultimoError = null,
+            ultimoIntentoMs = current.ultimoIntentoMs,
+        )
+    }
+
+    private fun markPendingFileSyncing(fileId: String) {
+        val idx = pendingTextFiles.indexOfFirst { it.id == fileId }
+        if (idx < 0) return
+        val current = pendingTextFiles[idx]
+        pendingTextFiles[idx] = current.copy(
+            estado = EstadoSyncArchivo.SINCRONIZANDO,
+            ultimoError = current.ultimoError,
+            ultimoIntentoMs = System.currentTimeMillis(),
+        )
+    }
+
+    private fun markPendingFileError(fileId: String, message: String = "No se pudo sincronizar") {
+        val idx = pendingTextFiles.indexOfFirst { it.id == fileId }
+        if (idx < 0) return
+        val current = pendingTextFiles[idx]
+        pendingTextFiles[idx] = current.copy(
+            estado = EstadoSyncArchivo.ERROR,
+            ultimoError = message,
+            ultimoIntentoMs = System.currentTimeMillis(),
+        )
+    }
+
+    fun removeOperacion(opId: String, source: OperacionSource) {
+        if (source == OperacionSource.BD) {
+            operacionesBd.removeAll { it.id == opId }
+        } else {
+            operacionesLc.removeAll { it.id == opId }
+        }
+        dirtyOperacionIds.removeAll { it == opId }
+        estadosSyncOperacion.remove(opId)
     }
 
     private suspend fun uploadOperacion(op: OperacionDto): OperacionDto? {
@@ -193,31 +612,231 @@ object DataManager {
         }.getOrNull()
     }
 
+    private fun <T> extractEnvelopeData(response: Response<ApiEnvelope<T>>?): T? {
+        if (response == null || !response.isSuccessful) return null
+        val body = response.body() ?: return null
+        if (body.ok != true) return null
+        return body.data
+    }
+
+    private fun normalizedBoatField(value: String?): String {
+        return value?.trim()?.lowercase().orEmpty()
+    }
+
+    private fun operacionDataScore(op: OperacionDto): Int {
+        return (op.botes?.size ?: 0) * 100 +
+            (if (op.region != null) 1 else 0) +
+            (if (op.sectorAmerbId != null) 1 else 0) +
+            (if (!op.sectorAmerb.isNullOrBlank()) 1 else 0) +
+            (if (!op.org.isNullOrBlank()) 1 else 0) +
+            (if (op.numSeg != null) 1 else 0) +
+            (if (!op.fechaInicio.isNullOrBlank()) 1 else 0) +
+            (if (!op.fechaFin.isNullOrBlank()) 1 else 0)
+    }
+
+    private fun sameBoatIdentity(left: OperacionBoteDto, right: OperacionBoteDto): Boolean {
+        val leftId = left.id?.trim()
+        val rightId = right.id?.trim()
+        if (!leftId.isNullOrBlank() && !rightId.isNullOrBlank()) {
+            return leftId == rightId
+        }
+        if (left.zona != null && right.zona != null && left.boteMaestroId != null && right.boteMaestroId != null) {
+            if (left.zona == right.zona && left.boteMaestroId == right.boteMaestroId) {
+                return true
+            }
+        }
+        return left.zona == right.zona &&
+            normalizedBoatField(left.nombre) == normalizedBoatField(right.nombre) &&
+            normalizedBoatField(left.buzo) == normalizedBoatField(right.buzo)
+    }
+
+    private fun mergeBotesPreservingData(
+        localBotes: List<OperacionBoteDto>,
+        remoteBotes: List<OperacionBoteDto>,
+    ): List<OperacionBoteDto> {
+        if (localBotes.isEmpty()) return remoteBotes
+        if (remoteBotes.isEmpty()) return localBotes
+
+        val merged = localBotes.toMutableList()
+        remoteBotes.forEach { remote ->
+            val idx = merged.indexOfFirst { sameBoatIdentity(it, remote) }
+            if (idx >= 0) {
+                val local = merged[idx]
+                merged[idx] = remote.copy(
+                    zona = remote.zona ?: local.zona,
+                    nombre = remote.nombre ?: local.nombre,
+                    buzo = remote.buzo ?: local.buzo,
+                    densTipo = remote.densTipo ?: local.densTipo,
+                    submareal = remote.submareal ?: local.submareal,
+                    boteMaestroId = remote.boteMaestroId ?: local.boteMaestroId,
+                    lpMuestras = if (!remote.lpMuestras.isNullOrEmpty()) remote.lpMuestras else local.lpMuestras,
+                    transectos = if (!remote.transectos.isNullOrEmpty()) remote.transectos else local.transectos,
+                )
+            } else {
+                merged.add(remote)
+            }
+        }
+        return merged
+    }
+
+    private fun mergeOperacionPreservingData(local: OperacionDto, remote: OperacionDto): OperacionDto {
+        return remote.copy(
+            region = remote.region ?: local.region,
+            sectorAmerbId = remote.sectorAmerbId ?: local.sectorAmerbId,
+            sectorAmerb = remote.sectorAmerb ?: local.sectorAmerb,
+            tipoOrg = remote.tipoOrg ?: local.tipoOrg,
+            opaId = remote.opaId ?: local.opaId,
+            org = remote.org ?: local.org,
+            numSeg = remote.numSeg ?: local.numSeg,
+            fechaInicio = remote.fechaInicio ?: local.fechaInicio,
+            fechaFin = remote.fechaFin ?: local.fechaFin,
+            botes = mergeBotesPreservingData(local.botes.orEmpty(), remote.botes.orEmpty())
+        )
+    }
+
+    private fun mergeOperationSnapshots(first: OperacionDto, second: OperacionDto): OperacionDto {
+        val primary = if (operacionDataScore(second) > operacionDataScore(first)) second else first
+        val secondary = if (primary === second) first else second
+        return mergeOperacionPreservingData(secondary, primary)
+    }
+
+    private fun deduplicateOperationsList(ops: List<OperacionDto>): List<OperacionDto> {
+        val merged = linkedMapOf<String, OperacionDto>()
+        ops.forEach { op ->
+            merged[op.id] = merged[op.id]
+                ?.let { existing -> mergeOperationSnapshots(existing, op) }
+                ?: op
+        }
+        return merged.values.toList()
+    }
+
+    private fun deduplicateOperationSources() {
+        val dedupBd = deduplicateOperationsList(operacionesBd)
+        val dedupLc = deduplicateOperationsList(operacionesLc)
+        val nextBd = dedupBd.toMutableList()
+        val nextLc = mutableListOf<OperacionDto>()
+
+        dedupLc.forEach { lcOp ->
+            val bdIndex = nextBd.indexOfFirst { it.id == lcOp.id }
+            if (bdIndex >= 0) {
+                nextBd[bdIndex] = mergeOperationSnapshots(nextBd[bdIndex], lcOp)
+            } else {
+                nextLc.add(lcOp)
+            }
+        }
+
+        if (operacionesBd.toList() != nextBd) {
+            operacionesBd.clear()
+            operacionesBd.addAll(nextBd)
+        }
+        if (operacionesLc.toList() != nextLc) {
+            operacionesLc.clear()
+            operacionesLc.addAll(nextLc)
+        }
+    }
+
+    private fun mergeServerOperations(serverOps: List<OperacionDto>) {
+        deduplicateOperationSources()
+        val dirtySet = dirtyOperacionIds.toSet()
+        val localById = (operacionesBd + operacionesLc)
+            .groupBy { it.id }
+            .mapValues { (_, ops) -> ops.reduce { acc, op -> mergeOperationSnapshots(acc, op) } }
+        val serverIds = serverOps.map { it.id }.toSet()
+        operacionesBd.clear()
+        operacionesBd.addAll(serverOps.map { op ->
+            val local = localById[op.id]
+            when {
+                dirtySet.contains(op.id) -> local ?: op
+                local != null -> mergeOperacionPreservingData(local, op)
+                else -> op
+            }
+        })
+        operacionesLc.removeAll { it.id in serverIds }
+        normalizeSyncStates()
+    }
+
+    private suspend fun fetchRemoteOperations(): List<OperacionDto>? {
+        val opsRes = runCatching { RetrofitClient.apiService.getOperaciones() }.getOrNull()
+        return extractEnvelopeData(opsRes)
+    }
+
+    private suspend fun fetchRemoteCatalogSnapshot(currentCatalog: CatalogSnapshot = getCatalogSnapshot()): CatalogSnapshot? = coroutineScope {
+        val regDeferred = async { runCatching { RetrofitClient.apiService.getRegiones() }.getOrNull() }
+        val secDeferred = async { runCatching { RetrofitClient.apiService.getSectoresAmerb() }.getOrNull() }
+        val calDeferred = async { runCatching { RetrofitClient.apiService.getCaletas() }.getOrNull() }
+        val opaDeferred = async { runCatching { RetrofitClient.apiService.getOpas() }.getOrNull() }
+        val botesDeferred = async { runCatching { RetrofitClient.apiService.getBotes() }.getOrNull() }
+        val especiesDeferred = async { runCatching { RetrofitClient.apiService.getEspecies() }.getOrNull() }
+        val regionesRemote = extractEnvelopeData(regDeferred.await())
+        val sectoresRemote = extractEnvelopeData(secDeferred.await())
+        val caletasRemote = extractEnvelopeData(calDeferred.await())
+        val opasRemote = extractEnvelopeData(opaDeferred.await())
+        val botesRemote = extractEnvelopeData(botesDeferred.await())
+        val especiesRemote = extractEnvelopeData(especiesDeferred.await())
+        CatalogSnapshot(
+            regiones = preferNonEmptyCatalog(regionesRemote, currentCatalog.regiones),
+            sectoresAmerb = preferNonEmptyCatalog(sectoresRemote, currentCatalog.sectoresAmerb),
+            caletas = preferNonEmptyCatalog(caletasRemote, currentCatalog.caletas),
+            opas = preferNonEmptyCatalog(opasRemote, currentCatalog.opas),
+            botesMaestros = preferNonEmptyCatalog(botesRemote, currentCatalog.botesMaestros),
+            especiesMaestras = preferNonEmptyCatalog(especiesRemote, currentCatalog.especiesMaestras),
+        )
+    }
+
+    private fun buildLocalOperacion(req: OperacionUpsertRequest): OperacionDto {
+        return OperacionDto(
+            id = req.id,
+            sector = req.sector,
+            region = req.region,
+            sectorAmerbId = req.sectorAmerbId,
+            sectorAmerb = req.sectorAmerb,
+            tipoOrg = req.tipoOrg,
+            opaId = req.opaId,
+            org = req.org,
+            numSeg = req.numSeg,
+            fechaInicio = req.fechaInicio,
+            fechaFin = req.fechaFin,
+            botes = req.botes,
+        )
+    }
+
     private fun applySavedOperacion(saved: OperacionDto) {
         val idx = operacionesBd.indexOfFirst { it.id == saved.id }
-        if (idx >= 0) operacionesBd[idx] = saved else operacionesBd.add(0, saved)
+        if (idx >= 0) {
+            operacionesBd[idx] = mergeOperacionPreservingData(operacionesBd[idx], saved)
+        } else {
+            operacionesBd.add(0, saved)
+        }
         operacionesLc.removeAll { it.id == saved.id }
         dirtyOperacionIds.removeAll { it == saved.id }
+        markOperacionSyncSuccess(saved.id)
+        normalizeSyncStates()
     }
 
     private suspend fun flushPendingOps(): Boolean {
         var any = false
         val pendingLc = operacionesLc.toList()
         pendingLc.forEach { op ->
+            markOperacionSyncing(op.id)
             val saved = uploadOperacion(op)
             if (saved != null) {
                 any = true
                 applySavedOperacion(saved)
+            } else {
+                markOperacionSyncError(op.id)
             }
         }
 
         val dirtyIds = dirtyOperacionIds.toList()
         dirtyIds.forEach { id ->
             val op = (operacionesBd + operacionesLc).firstOrNull { it.id == id } ?: return@forEach
+            markOperacionSyncing(id)
             val saved = uploadOperacion(op)
             if (saved != null) {
                 any = true
                 applySavedOperacion(saved)
+            } else {
+                markOperacionSyncError(id)
             }
         }
 
@@ -227,144 +846,147 @@ object DataManager {
     private suspend fun flushPendingFiles() {
         val pending = pendingTextFiles.toList()
         pending.forEach { f ->
+            val fileId = f.id ?: buildPendingFileId(f.name, f.opId, f.createdAt)
+            markPendingFileSyncing(fileId)
             val res = runCatching {
                 RetrofitClient.apiService.uploadTextFile(UploadTextFileRequest(name = f.name, opId = f.opId, text = f.text))
             }.getOrNull()
             if (res != null && res.isSuccessful && res.body()?.ok == true) {
-                pendingTextFiles.remove(f)
+                pendingTextFiles.removeAll { it.id == fileId }
+            } else {
+                markPendingFileError(fileId)
             }
         }
     }
 
     suspend fun tryUploadOperacion(context: Context, op: OperacionDto): Boolean {
         if (AppState.forceOffline) return false
+        if (!AppState.hasNetwork) return false
         if (AppState.authToken.isNullOrBlank()) return false
-        val saved = uploadOperacion(op) ?: return false
+        markOperacionSyncing(op.id)
+        val saved = uploadOperacion(op)
+        if (saved == null) {
+            markOperacionSyncError(op.id)
+            return false
+        }
         applySavedOperacion(saved)
+        AppState.registerSyncSuccess()
         persistCache(context)
         return true
     }
 
-    suspend fun syncAllFromServer(context: Context) {
-        if (AppState.forceOffline) return
-        if (AppState.authToken.isNullOrBlank()) return
+    suspend fun refreshCatalogs(context: Context, force: Boolean = false): Boolean {
+        if (AppState.forceOffline) return false
+        if (!AppState.hasNetwork) return false
+        if (AppState.authToken.isNullOrBlank()) return false
+        if (!shouldRefreshCatalogs(context, force)) return true
 
-        val dirtySet = dirtyOperacionIds.toSet()
-        val localById = (operacionesBd + operacionesLc).associateBy { it.id }
+        val snapshot = runCatching { fetchRemoteCatalogSnapshot() }.getOrNull() ?: return false
+        applyCatalogSnapshot(snapshot)
+        markCatalogSyncSuccess(context)
+        persistCache(context)
+        return true
+    }
 
-        val syncOk = runCatching {
-            coroutineScope {
-                val regDeferred = async { RetrofitClient.apiService.getRegiones() }
-                val secDeferred = async { RetrofitClient.apiService.getSectoresAmerb() }
-                val calDeferred = async { RetrofitClient.apiService.getCaletas() }
-                val opaDeferred = async { RetrofitClient.apiService.getOpas() }
-                val botesDeferred = async { RetrofitClient.apiService.getBotes() }
-                val especiesDeferred = async { RetrofitClient.apiService.getEspecies() }
-                val opsDeferred = async { RetrofitClient.apiService.getOperaciones() }
+    suspend fun refreshOperacionDetail(context: Context, opId: String): OperacionDto? {
+        val local = (operacionesBd + operacionesLc).firstOrNull { it.id == opId }
+        if (AppState.forceOffline || AppState.authToken.isNullOrBlank() || !AppState.hasNetwork) {
+            return local
+        }
+        val fresh = extractEnvelopeData(runCatching { RetrofitClient.apiService.getOperacion(opId) }.getOrNull()) ?: return local
+        upsertOperacionInMemory(fresh)
+        persistCache(context)
+        return (operacionesBd + operacionesLc).firstOrNull { it.id == opId } ?: fresh
+    }
 
-                val regRes = regDeferred.await()
-                if (regRes.isSuccessful && regRes.body()?.ok == true) {
-                    regiones.clear()
-                    regiones.addAll(regRes.body()?.data ?: emptyList())
-                }
-
-                val secRes = secDeferred.await()
-                if (secRes.isSuccessful && secRes.body()?.ok == true) {
-                    sectoresAmerb.clear()
-                    sectoresAmerb.addAll(secRes.body()?.data ?: emptyList())
-                }
-
-                val calRes = calDeferred.await()
-                if (calRes.isSuccessful && calRes.body()?.ok == true) {
-                    caletas.clear()
-                    caletas.addAll(calRes.body()?.data ?: emptyList())
-                }
-
-                val opaRes = opaDeferred.await()
-                if (opaRes.isSuccessful && opaRes.body()?.ok == true) {
-                    opas.clear()
-                    opas.addAll(opaRes.body()?.data ?: emptyList())
-                }
-
-                val botesRes = botesDeferred.await()
-                if (botesRes.isSuccessful && botesRes.body()?.ok == true) {
-                    botesMaestros.clear()
-                    botesMaestros.addAll(botesRes.body()?.data ?: emptyList())
-                }
-
-                val especiesRes = especiesDeferred.await()
-                if (especiesRes.isSuccessful && especiesRes.body()?.ok == true) {
-                    val data = especiesRes.body()?.data ?: emptyList()
-                    especiesMaestras.clear()
-                    especiesMaestras.addAll(data)
-                    especies.clear()
-                    especies.addAll(data.map { e -> EspecieMaestra(e.id, e.com, e.sci ?: "") })
-                }
-
-                val opsRes = opsDeferred.await()
-                if (opsRes.isSuccessful && opsRes.body()?.ok == true) {
-                    val serverOps = opsRes.body()?.data ?: emptyList()
-                    val serverIds = serverOps.map { it.id }.toSet()
-                    operacionesBd.clear()
-                    operacionesBd.addAll(serverOps.map { op ->
-                        if (dirtySet.contains(op.id)) localById[op.id] ?: op else op
-                    })
-                    operacionesLc.removeAll { it.id in serverIds }
-                }
+    suspend fun createOperacion(context: Context, req: OperacionUpsertRequest): OperacionDto {
+        if (AppState.isEffectivelyOnline()) {
+            val saved = extractEnvelopeData(runCatching { RetrofitClient.apiService.crearOperacion(req) }.getOrNull())
+            if (saved != null) {
+                applySavedOperacion(saved)
+                persistCache(context)
+                return saved
             }
-            true
-        }.getOrElse {
-            false
         }
 
-        AppState.isOnline = syncOk
+        val local = buildLocalOperacion(req)
+        upsertOperacionInMemory(local)
+        markOperacionDirty(local.id, esOperacionSoloLocal = true)
+        persistCache(context)
+        return (operacionesLc.firstOrNull { it.id == local.id } ?: local)
+    }
 
-        if (syncOk) {
+    suspend fun syncAllFromServer(context: Context): Boolean {
+        if (!syncMutex.tryLock()) return false
+        try {
+            if (AppState.forceOffline) return false
+            if (!AppState.hasNetwork) {
+                AppState.registerSyncFailure("Sin conectividad")
+                reconcileBackgroundSync(context)
+                return false
+            }
+            if (AppState.authToken.isNullOrBlank()) {
+                reconcileBackgroundSync(context)
+                return false
+            }
+
             val anyUploaded = flushPendingOps()
             flushPendingFiles()
-            if (anyUploaded) {
-                runCatching {
-                    val opsRes = RetrofitClient.apiService.getOperaciones()
-                    if (opsRes.isSuccessful && opsRes.body()?.ok == true) {
-                        val serverOps = opsRes.body()?.data ?: emptyList()
-                        val serverIds = serverOps.map { it.id }.toSet()
-                        val dirtyNow = dirtyOperacionIds.toSet()
-                        val localNow = (operacionesBd + operacionesLc).associateBy { it.id }
-                        operacionesBd.clear()
-                        operacionesBd.addAll(serverOps.map { op ->
-                            if (dirtyNow.contains(op.id)) localNow[op.id] ?: op else op
-                        })
-                        operacionesLc.removeAll { it.id in serverIds }
-                    }
+
+            var syncOk = true
+            val refreshedOps = runCatching { fetchRemoteOperations() }.getOrNull()
+            if (refreshedOps != null) {
+                mergeServerOperations(refreshedOps)
+            } else {
+                syncOk = false
+            }
+
+            if (shouldRefreshCatalogs(context, force = anyUploaded)) {
+                val remoteCatalog = runCatching { fetchRemoteCatalogSnapshot() }.getOrNull()
+                if (remoteCatalog != null) {
+                    applyCatalogSnapshot(remoteCatalog)
+                    markCatalogSyncSuccess(context)
+                } else if (!hasCatalogData()) {
+                    syncOk = false
                 }
             }
-        }
 
-        persistCache(context)
+            if (syncOk) AppState.registerSyncSuccess()
+            else AppState.registerSyncFailure("No se pudo sincronizar con la nube")
+
+            persistCache(context)
+            reconcileBackgroundSync(context)
+            return syncOk
+        } finally {
+            syncMutex.unlock()
+        }
     }
 
-    suspend fun ensureBitecmaOnlineSession(context: Context): Boolean {
-        if (!AppState.isBitecmaUser()) return false
+    suspend fun ensureAuthenticatedOnlineSession(context: Context): Boolean {
+        if (!AppState.hasAuthenticatedSession()) return false
         if (AppState.forceOffline) return false
+        if (!AppState.hasNetwork) return false
         if (!AppState.authToken.isNullOrBlank()) {
-            AppState.isOnline = true
+            AppState.registerSyncSuccess()
             AppState.persistSession(context)
+            reconcileBackgroundSync(context)
             return true
         }
-        val res = runCatching {
-            RetrofitClient.apiService.login(AuthLoginRequest(correo = "bitecma@bitecma.cl", password = "12345678"))
-        }.getOrNull() ?: return false
-        if (!res.isSuccessful) return false
-        val body = res.body() ?: return false
-        if (body.ok != true || body.token.isNullOrBlank()) return false
-
-        AppState.isOnline = true
-        AppState.authToken = body.token
-        val user = body.user
-        AppState.currentUserId = user?.uid ?: AppState.currentUserId
-        AppState.currentUserName = user?.nombre ?: AppState.currentUserName
-        AppState.currentUserRole = user?.rol ?: AppState.currentUserRole
+        AppState.registerSyncFailure("Necesitas iniciar sesión nuevamente para sincronizar")
         AppState.persistSession(context)
-        return true
+        reconcileBackgroundSync(context)
+        return false
+    }
+
+    private fun String.toEstadoSyncOperacion(): EstadoSyncOperacion {
+        return runCatching { EstadoSyncOperacion.valueOf(this) }.getOrDefault(EstadoSyncOperacion.PENDIENTE)
+    }
+
+    private fun String.toEstadoSyncArchivo(): EstadoSyncArchivo {
+        return runCatching { EstadoSyncArchivo.valueOf(this) }.getOrDefault(EstadoSyncArchivo.PENDIENTE)
+    }
+
+    private fun buildPendingFileId(name: String, opId: String?, createdAt: Long): String {
+        return "file-$createdAt-${opId ?: "general"}-${name.hashCode()}"
     }
 }
