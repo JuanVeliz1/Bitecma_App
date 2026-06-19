@@ -1,16 +1,102 @@
-# React + Vite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+# 🐟 Bitecma App
+Sistema completo (Android + Web) para la gestión de **muestreos intermareales y submareales** de la organización Bitecma, diseñado para optimizar la captura, sincronización y visualización de datos bentónicos y de peso-longitud.
 
-Currently, two official plugins are available:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🛠️ Stack Tecnológico
+### 📱 Aplicación Android
+- **Lenguaje**: Kotlin
+- **UI Framework**: Jetpack Compose
+- **Navegación**: Compose Navigation
+- **Red**: Retrofit + OkHttp (interceptor de autenticación Bearer)
+- **Persistencia Local**: SharedPreferences (caché offline-first)
+- **MinSdk**: 21 (compatible con dispositivos antiguos)
+- **Reportes**: Exportación a `.csv` (sustitución de `.xlsx` por compatibilidad)
 
-## React Compiler
+### 🌐 Web (Frontend)
+- **Lenguaje**: JavaScript
+- **Framework**: React
+- **Bundler**: Vite
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 📡 API REST (Backend)
+- **Lenguaje**: PHP 7.4+
+- **Autenticación**: JWT
+- **Base de Datos**: MySQL/MariaDB (con soporte para migración a **InnoDB**)
+- **Características Clave**:
+  - ACID Transactions (con InnoDB)
+  - Foreign Key Constraints (validación de referencias + detección de huérfanos)
+  - Backup automatizado semanal
+  - Herramienta CLI para migración a InnoDB
 
-## Expanding the ESLint configuration
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 📋 Funcionalidades Principales
+### Android
+- ✅ Login online/offline (con fallback local sin internet)
+- ✅ Gestión de **operaciones agrupadas por región** con menús abatibles
+- ✅ Selección explícita de **Intermareal (a pie)** vs **Submareal (en bote)**
+- ✅ Ingreso y edición de datos de **densidad** y **peso-longitud**
+- ✅ Caché local + sincronización offline-first
+- ✅ Botón para subir operaciones locales a la nube
+- ✅ Botón de **sincronización completa** (catálogos + operaciones)
+- ✅ Switch exclusivo admin (`bitecma@bitecma.cl`) para forzar modo offline/online
+- ✅ Iconografía reactiva según estado (modo offline/online/Intermareal/Submareal)
+- ✅ Exportación de reportes a `.csv`
+- ✅ Mejora de rendimiento: caché persistido en background (evita ANR)
+
+### Web
+- ✅ Visualización de operaciones y datos
+- ✅ Gestión de botes, caletas, sectores, especies y perfiles
+- ✅ Generación de reportes y backup
+
+
+## 🚀 Instalación y Ejecución
+### Android
+1. Abre la carpeta `Bitecma_Android/` en Android Studio.
+2. Sincroniza Gradle.
+3. Conecta un dispositivo físico/emulador y ejecuta la app.
+
+### API
+1. Sube la carpeta `Bitecma_Android/bitecma-api/` a tu servidor (cPanel, VPS, etc.) en la ruta deseada (ej: `public_html/api/`).
+2. Edita `Bitecma_Android/bitecma-api/config/database.php` con tus credenciales de MySQL/MariaDB.
+3. **Migración a InnoDB**: Ejecuta en el servidor (SSH/terminal, ruta donde está `index.php` de la API):
+   ```bash
+   # Si tu servidor usa php81 (ajusta si es otra versión: php80, php74, ea-php81, etc.)
+   php cron/migrate_innodb.php
+   ```
+
+### Web (React + Vite)
+1. Ve a la carpeta raíz del proyecto:
+   ```bash
+   cd c:\Users\juanp\Downloads\Bitecma_web-main
+   ```
+2. Instala dependencias:
+   ```bash
+   npm install
+   ```
+3. Ejecuta el servidor de desarrollo:
+   ```bash
+   npm run dev
+   ```
+
+
+## 📝 Uso de la App Android
+1. **Login**: Usa tu usuario de Bitecma (para modo admin: `bitecma@bitecma.cl`).
+2. **Crear Operación**: Añade datos básicos (región, caleta, fecha, etc.).
+3. **Gestión de Botes**:
+   - Toca **"+ AGREGAR FILA"**.
+   - Usa el toggle para elegir entre **Intermareal (a pie)** (sin bote maestro, solo buzo) o **Submareal (en bote)** (requiere bote maestro).
+4. **Ingreso de Datos**:
+   - Toca un bote para abrir el diálogo de datos.
+   - Usa las pestañas **"Densidad"** y **"Peso-Longitud"**.
+5. **Sincronizar**:
+   - Usa el botón **"SINCRONIZAR TODO"** para bajar datos del servidor.
+   - Toca el ícono de **"Cargar a nube"** en una operación local para subirla.
+
+
+## 📞 Soporte
+Para reportes de bugs o consultas, escribe al equipo de Bitecma.
+
+
+---
+
+**Repositorio**: [https://github.com/JuanVeliz1/Bitecma_App](https://github.com/JuanVeliz1/Bitecma_App)
