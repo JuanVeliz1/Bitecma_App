@@ -3,30 +3,13 @@
 Sistema completo (Android + Web) para la gestión de **muestreos intermareales y submareales** de la organización Bitecma, diseñado para optimizar la captura, sincronización y visualización de datos bentónicos y de peso-longitud.
 
 
-## 🛠️ Stack Tecnológico
-### 📱 Aplicación Android
+###  Aplicación Android
 - **Lenguaje**: Kotlin
 - **UI Framework**: Jetpack Compose
 - **Navegación**: Compose Navigation
 - **Red**: Retrofit + OkHttp (interceptor de autenticación Bearer)
 - **Persistencia Local**: SharedPreferences (caché offline-first)
 - **MinSdk**: 21 (compatible con dispositivos antiguos)
-- **Reportes**: Exportación a `.csv` (sustitución de `.xlsx` por compatibilidad)
-
-### 🌐 Web (Frontend)
-- **Lenguaje**: JavaScript
-- **Framework**: React
-- **Bundler**: Vite
-
-### 📡 API REST (Backend)
-- **Lenguaje**: PHP 7.4+
-- **Autenticación**: JWT
-- **Base de Datos**: MySQL/MariaDB (con soporte para migración a **InnoDB**)
-- **Características Clave**:
-  - ACID Transactions (con InnoDB)
-  - Foreign Key Constraints (validación de referencias + detección de huérfanos)
-  - Backup automatizado semanal
-  - Herramienta CLI para migración a InnoDB
 
 
 ## 📋 Funcionalidades Principales
@@ -63,21 +46,6 @@ Sistema completo (Android + Web) para la gestión de **muestreos intermareales y
    # Si tu servidor usa php81 (ajusta si es otra versión: php80, php74, ea-php81, etc.)
    php cron/migrate_innodb.php
    ```
-
-### Web (React + Vite)
-1. Ve a la carpeta raíz del proyecto:
-   ```bash
-   cd c:\Users\juanp\Downloads\Bitecma_web-main
-   ```
-2. Instala dependencias:
-   ```bash
-   npm install
-   ```
-3. Ejecuta el servidor de desarrollo:
-   ```bash
-   npm run dev
-   ```
-
 
 ## 📝 Uso de la App Android
 1. **Login**: Usa tu usuario de Bitecma (para modo admin: `bitecma@bitecma.cl`).
