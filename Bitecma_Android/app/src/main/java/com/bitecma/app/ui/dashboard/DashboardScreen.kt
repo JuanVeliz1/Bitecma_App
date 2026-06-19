@@ -29,6 +29,7 @@ import com.bitecma.app.ui.bitecmaCardBackground
 import com.bitecma.app.ui.bitecmaDangerBg
 import com.bitecma.app.ui.bitecmaMutedText
 import com.bitecma.app.ui.bitecmaNavy
+import com.bitecma.app.ui.bitecmaNavyStrong
 import com.bitecma.app.ui.bitecmaSoftBackground
 import com.bitecma.app.ui.bitecmaSoftBackgroundAlt
 import com.bitecma.app.ui.bitecmaSubtleText
@@ -79,26 +80,26 @@ private fun rememberConnectionStatusUi(
     ) {
         when {
             !displayHasNetwork -> ConnectionStatusUi(
-                title = "SIN RED",
-                detail = "La app sigue trabajando con cache local",
+                title = "Sin conexion",
+                detail = "Tus datos siguen disponibles en este equipo.",
                 accentColor = colors.error,
                 containerColor = colors.bitecmaDangerBg,
             )
             isConnecting -> ConnectionStatusUi(
-                title = "RED DISPONIBLE",
-                detail = "Internet activo. Preparando la sincronizacion",
+                title = "Con conexion",
+                detail = "Preparando tu informacion.",
                 accentColor = colors.bitecmaNavy,
                 containerColor = colors.bitecmaBlueBg,
             )
             AppState.hasAuthenticatedSession() -> ConnectionStatusUi(
-                title = "RED DISPONIBLE",
-                detail = "Internet activo y sincronizacion habilitada",
+                title = "Con conexion",
+                detail = "La informacion se actualiza automaticamente.",
                 accentColor = colors.bitecmaTeal,
                 containerColor = colors.bitecmaSuccessBg,
             )
             else -> ConnectionStatusUi(
-                title = "RED DISPONIBLE",
-                detail = "Internet activo, pero falta conectar una cuenta para sincronizar",
+                title = "Con conexion",
+                detail = "Conecta tu cuenta para actualizar la informacion.",
                 accentColor = colors.bitecmaNavy,
                 containerColor = colors.bitecmaBlueBg,
             )
@@ -315,13 +316,13 @@ fun DashboardScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Dashboard", color = colors.onPrimary) },
+                    title = { Text("Dashboard", color = Color.White) },
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menú", tint = colors.onPrimary)
+                            Icon(Icons.Default.Menu, contentDescription = "Menú", tint = Color.White)
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.primary)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bitecmaNavyStrong)
                 )
             }
         ) { padding ->
@@ -365,28 +366,28 @@ fun DashboardScreen(
                         if (isCompact) {
                             Column {
                                 SummaryCard(
-                                    title = "OPERACIONES",
+                                    title = "Operaciones",
                                     value = totalOps.toString(),
                                     subtitle = "Total registradas",
-                                    color = colors.bitecmaTeal,
+                                    color = Color(0xFF22D3EE),
                                     isDarkMode = isDarkMode,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
                                 SummaryCard(
-                                    title = "MUESTRAS L-P",
+                                    title = "Muestras L-P",
                                     value = totalMuestras.toString(),
                                     subtitle = "Registros L/LP/D",
-                                    color = colors.bitecmaNavy,
+                                    color = Color(0xFF10B981),
                                     isDarkMode = isDarkMode,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
                                 SummaryCard(
-                                    title = "DENSIDAD",
+                                    title = "Densidad",
                                     value = unidadesDensidad.toString(),
                                     subtitle = "Unidades registradas",
-                                    color = colors.primary,
+                                    color = Color(0xFF8B5CF6),
                                     isDarkMode = isDarkMode,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -397,28 +398,28 @@ fun DashboardScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 SummaryCard(
-                                    title = "OPERACIONES",
+                                    title = "Operaciones",
                                     value = totalOps.toString(),
                                     subtitle = "Total registradas",
-                                    color = colors.bitecmaTeal,
+                                    color = Color(0xFF22D3EE),
                                     isDarkMode = isDarkMode,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 SummaryCard(
-                                    title = "MUESTRAS L-P",
+                                    title = "Muestras L-P",
                                     value = totalMuestras.toString(),
                                     subtitle = "Registros L/LP/D",
-                                    color = colors.bitecmaNavy,
+                                    color = Color(0xFF10B981),
                                     isDarkMode = isDarkMode,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 SummaryCard(
-                                    title = "DENSIDAD",
+                                    title = "Densidad",
                                     value = unidadesDensidad.toString(),
                                     subtitle = "Unidades registradas",
-                                    color = colors.primary,
+                                    color = Color(0xFF8B5CF6),
                                     isDarkMode = isDarkMode,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -445,17 +446,17 @@ fun DashboardScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("OPERACIONES RECIENTES", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaMutedText)
+                                        Text("Operaciones recientes", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaMutedText)
                                         TextButton(onClick = { navController.navigate(AppRoutes.operaciones(userId)) }) {
                                             Text("Ver todas", fontSize = 12.sp)
                                         }
                                     }
                                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.bitecmaBorder)
                                     Row(modifier = Modifier.fillMaxWidth()) {
-                                        Text("ID", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        Text("SECTOR", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        Text("FECHA", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        Text("BOTES", modifier = Modifier.weight(0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("Id", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("Sector", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("Fecha", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("Botes", modifier = Modifier.weight(0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                     }
                                     opsAll.take(5).forEach { op ->
                                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -488,17 +489,17 @@ fun DashboardScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("OPERACIONES RECIENTES", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaMutedText)
+                                        Text("Operaciones recientes", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaMutedText)
                                         TextButton(onClick = { navController.navigate(AppRoutes.operaciones(userId)) }) {
                                             Text("Ver todas", fontSize = 12.sp)
                                         }
                                     }
                                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.bitecmaBorder)
                                     Row(modifier = Modifier.fillMaxWidth()) {
-                                        Text("ID", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        Text("SECTOR", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        Text("FECHA", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        Text("BOTES", modifier = Modifier.weight(0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("Id", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("Sector", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("Fecha", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("Botes", modifier = Modifier.weight(0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                     }
                                     opsAll.take(5).forEach { op ->
                                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -538,20 +539,20 @@ private fun DashboardStatusCard(
     val colors = MaterialTheme.colorScheme
     val syncEnabled = displayHasNetwork && AppState.hasAuthenticatedSession()
     val title = when {
-        isConnecting -> "Conectando y sincronizando"
-        syncEnabled -> "Sincronizacion habilitada"
-        displayHasNetwork -> "Sincronizacion disponible"
-        else -> "Trabajo local sin red"
+        isConnecting -> "Conectando"
+        syncEnabled -> "Todo listo"
+        displayHasNetwork -> "Con conexion"
+        else -> "Sin conexion"
     }
     val detail = when {
-        isConnecting -> "La app esta validando sesion y preparando la sincronizacion."
-        syncEnabled -> "La sincronizacion esta habilitada para operaciones y documentos."
-        displayHasNetwork -> "Hay internet disponible. La app sincronizara automaticamente cuando corresponda."
-        else -> "La app sigue trabajando con cache local y cola de pendientes para sincronizar despues."
+        isConnecting -> "Preparando tus datos."
+        syncEnabled -> "Los cambios se guardan y se actualizan automaticamente."
+        displayHasNetwork -> "La app actualizara la informacion cuando corresponda."
+        else -> "Puedes seguir trabajando y los cambios quedaran guardados."
     }
     val containerColor = when {
-        isConnecting -> colors.bitecmaBlueBg
-        syncEnabled -> colors.bitecmaSuccessBg
+        isConnecting -> colors.bitecmaCardBackground
+        syncEnabled -> colors.bitecmaCardBackground
         else -> colors.bitecmaSoftBackgroundAlt
     }
     val accentColor = when {

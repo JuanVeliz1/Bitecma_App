@@ -29,11 +29,32 @@ import com.bitecma.app.ui.bitecmaBorder
 import com.bitecma.app.ui.bitecmaCardBackground
 import com.bitecma.app.ui.bitecmaMutedText
 import com.bitecma.app.ui.bitecmaNavy
+import com.bitecma.app.ui.bitecmaNavyStrong
 import com.bitecma.app.ui.bitecmaSoftBackground
 import com.bitecma.app.ui.bitecmaSoftBackgroundAlt
 import com.bitecma.app.ui.bitecmaSubtleText
 import com.bitecma.app.ui.bitecmaTeal
 import com.bitecma.app.ui.bitecmaTealContainer
+import kotlinx.coroutines.delay
+
+@Composable
+private fun rememberStableCatalogNetworkFlag(): Boolean {
+    var displayHasNetwork by remember { mutableStateOf(AppState.hasNetwork) }
+
+    LaunchedEffect(AppState.hasNetwork) {
+        if (AppState.hasNetwork) {
+            displayHasNetwork = true
+            return@LaunchedEffect
+        }
+
+        delay(2000)
+        if (!AppState.hasNetwork) {
+            displayHasNetwork = false
+        }
+    }
+
+    return displayHasNetwork
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +64,8 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     var selectedEspecie by remember { mutableStateOf<EspecieMaestra?>(null) }
+    val displayHasNetwork = rememberStableCatalogNetworkFlag()
+    val hasAuthenticatedSession = AppState.hasAuthenticatedSession()
     val dedupeKey: (EspecieMaestra) -> String = { especie ->
         "${especie.nombreComun.trim().lowercase()}|${especie.nombreCientifico.trim().lowercase()}"
     }
@@ -50,7 +73,7 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
         derivedStateOf { DataManager.especies.distinctBy(dedupeKey) }
     }
 
-    LaunchedEffect(context) {
+    LaunchedEffect(Unit) {
         runCatching { DataManager.refreshCatalogs(context) }
     }
     
@@ -60,20 +83,20 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
     }
 
     val accessMessage = when {
-        AppState.hasAuthenticatedSession() && AppState.hasNetwork -> "Catalogo de especies sincronizado con la base."
-        AppState.hasAuthenticatedSession() -> "Sin red: mostrando el ultimo catalogo de especies guardado."
+        hasAuthenticatedSession && displayHasNetwork -> "Catalogo de especies sincronizado con la base."
+        hasAuthenticatedSession -> "Sin red: mostrando el ultimo catalogo de especies guardado."
         else -> "Debes iniciar sesion con internet para sincronizar especies."
     }
 
     val accessContainerColor = when {
-        AppState.hasAuthenticatedSession() && AppState.hasNetwork -> colors.bitecmaTealContainer
-        AppState.hasAuthenticatedSession() -> colors.bitecmaSoftBackgroundAlt
+        hasAuthenticatedSession && displayHasNetwork -> colors.bitecmaTealContainer
+        hasAuthenticatedSession -> colors.bitecmaSoftBackgroundAlt
         else -> colors.bitecmaTealContainer
     }
 
     val accessContentColor = when {
-        AppState.hasAuthenticatedSession() && AppState.hasNetwork -> colors.bitecmaTeal
-        AppState.hasAuthenticatedSession() -> colors.bitecmaSubtleText
+        hasAuthenticatedSession && displayHasNetwork -> colors.bitecmaTeal
+        hasAuthenticatedSession -> colors.bitecmaSubtleText
         else -> colors.bitecmaTeal
     }
 
@@ -105,13 +128,13 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Maestro de Especies", color = colors.onPrimary) },
+                title = { Text("Maestro de Especies", color = androidx.compose.ui.graphics.Color.White) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = colors.onPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = androidx.compose.ui.graphics.Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.primary)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bitecmaNavyStrong)
             )
         }
     ) { padding ->
@@ -122,6 +145,10 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
                 .background(MaterialTheme.colorScheme.background)
                 .padding(16.dp)
         ) {
+            Text("Maestro de Especies", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = colors.bitecmaNavy)
+            Text("Catalogo sincronizado para consulta y busqueda rapida", color = colors.bitecmaSubtleText, fontSize = 12.sp)
+            Spacer(modifier = Modifier.height(16.dp))
+
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -168,7 +195,7 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
                 border = BorderStroke(1.dp, colors.bitecmaBorder)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Text("ESPECIES", style = MaterialTheme.typography.labelMedium, color = colors.bitecmaMutedText)
+                    Text("Especies", style = MaterialTheme.typography.labelMedium, color = colors.bitecmaMutedText)
                     Text(especies.size.toString(), style = MaterialTheme.typography.titleLarge, color = colors.bitecmaNavy)
                     Text("Resultados para la busqueda actual", style = MaterialTheme.typography.bodySmall, color = colors.bitecmaSubtleText)
                 }

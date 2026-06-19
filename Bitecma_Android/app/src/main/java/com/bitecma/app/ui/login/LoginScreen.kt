@@ -240,7 +240,7 @@ fun LoginScreen(navController: NavController) {
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "El primer ingreso requiere internet. Despues podrás usar la app offline con la cuenta ya validada en este dispositivo.",
+                        text = "El primer ingreso requiere internet. Despues podras seguir usando la app en este dispositivo.",
                         fontSize = 11.sp,
                         color = colors.bitecmaMutedText
                     )

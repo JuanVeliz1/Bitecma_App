@@ -294,7 +294,7 @@ internal fun OperacionesFiltersHeader(
     ) {
         Icon(Icons.Default.Sync, null)
         Spacer(Modifier.width(10.dp))
-        Text("SINCRONIZAR TODO", fontWeight = FontWeight.Black)
+        Text("Sincronizar", fontWeight = FontWeight.Black)
     }
     Spacer(modifier = Modifier.height(16.dp))
 }
@@ -428,9 +428,9 @@ internal fun BoteDataResumenDialog(
 
                 Text(
                     text = if (densityUnits == 0 && lpSamples == 0) {
-                        "Este bote aun no tiene datos cargados. Puedes agregar especies o comenzar con densidad/peso-longitud."
+                        "Este bote aun no tiene informacion registrada."
                     } else {
-                        "Revisa los datos ya cargados o agrega mas informacion a este bote."
+                        "Revisa la informacion registrada o agrega nuevos datos."
                     },
                     fontSize = 12.sp,
                     color = colors.bitecmaMutedText
@@ -444,7 +444,7 @@ internal fun BoteDataResumenDialog(
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = colors.bitecmaTeal)
                 ) {
-                    Text(if (densityUnits > 0) "VER / EDITAR DENSIDAD" else "AGREGAR DENSIDAD", fontWeight = FontWeight.Black)
+                    Text(if (densityUnits > 0) "Ver densidad" else "Agregar densidad", fontWeight = FontWeight.Black)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -455,7 +455,7 @@ internal fun BoteDataResumenDialog(
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706))
                 ) {
-                    Text(if (lpSamples > 0) "VER / EDITAR PESO-LONGITUD" else "AGREGAR PESO-LONGITUD", fontWeight = FontWeight.Black)
+                    Text(if (lpSamples > 0) "Ver peso-longitud" else "Agregar peso-longitud", fontWeight = FontWeight.Black)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -465,7 +465,7 @@ internal fun BoteDataResumenDialog(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text("AGREGAR O CAMBIAR ESPECIES", fontWeight = FontWeight.Black)
+                    Text("Gestionar especies", fontWeight = FontWeight.Black)
                 }
             }
         }
@@ -488,11 +488,11 @@ internal fun OperacionCard(
     val tagBg = if (item.source == OperacionSource.BD) colors.bitecmaSuccessBg else colors.bitecmaDangerBg
     val tagFg = if (item.source == OperacionSource.BD) Color(0xFF059669) else colors.error
     val syncBadge = when (syncInfo.estado) {
-        DataManager.EstadoSyncOperacion.SOLO_LOCAL -> Triple("SOLO LOCAL", colors.bitecmaBlueBg, Color(0xFF1D6FA4))
-        DataManager.EstadoSyncOperacion.PENDIENTE -> Triple("PENDIENTE", colors.bitecmaAmberBg, Color(0xFFD97706))
-        DataManager.EstadoSyncOperacion.SINCRONIZANDO -> Triple("SINCRONIZANDO", colors.bitecmaTealContainer, colors.bitecmaTeal)
-        DataManager.EstadoSyncOperacion.ERROR -> Triple("ERROR", colors.bitecmaDangerBg, colors.error)
-        DataManager.EstadoSyncOperacion.SINCRONIZADO -> Triple("SINCRONIZADA", colors.bitecmaSuccessBg, Color(0xFF059669))
+        DataManager.EstadoSyncOperacion.SOLO_LOCAL -> Triple("Solo local", colors.bitecmaBlueBg, Color(0xFF1D6FA4))
+        DataManager.EstadoSyncOperacion.PENDIENTE -> Triple("Pendiente", colors.bitecmaAmberBg, Color(0xFFD97706))
+        DataManager.EstadoSyncOperacion.SINCRONIZANDO -> Triple("Sincronizando", colors.bitecmaTealContainer, colors.bitecmaTeal)
+        DataManager.EstadoSyncOperacion.ERROR -> Triple("Error", colors.bitecmaDangerBg, colors.error)
+        DataManager.EstadoSyncOperacion.SINCRONIZADO -> Triple("Sincronizada", colors.bitecmaSuccessBg, Color(0xFF059669))
     }
     Card(
         modifier = Modifier.fillMaxWidth(),

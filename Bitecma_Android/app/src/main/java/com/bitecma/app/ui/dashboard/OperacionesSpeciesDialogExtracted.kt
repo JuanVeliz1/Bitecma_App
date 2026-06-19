@@ -39,6 +39,7 @@ internal fun ExtractedOperacionSpeciesDialog(
     onContinue: () -> Unit,
 ) {
     if (!show) return
+    val colors = MaterialTheme.colorScheme
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -50,7 +51,7 @@ internal fun ExtractedOperacionSpeciesDialog(
                 .fillMaxHeight(0.9f)
                 .padding(vertical = 16.dp),
             shape = RoundedCornerShape(20.dp),
-            color = if (isSystemInDarkTheme()) Color(0xFF111B2B) else Color.White,
+            color = colors.surface,
             tonalElevation = 8.dp
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -65,11 +66,15 @@ internal fun ExtractedOperacionSpeciesDialog(
                         .padding(20.dp)
                 ) {
                     Text(
-                        "ESPECIES A MUESTREAR",
+                        "Especies a muestrear",
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(end = 44.dp),
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
+                        letterSpacing = 1.sp,
+                        maxLines = 1
                     )
                     IconButton(
                         onClick = onDismiss,
@@ -81,17 +86,17 @@ internal fun ExtractedOperacionSpeciesDialog(
 
                 Column(modifier = Modifier.padding(20.dp).weight(1f)) {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD).copy(alpha = 0.8f)),
+                        colors = CardDefaults.cardColors(containerColor = colors.primary.copy(alpha = 0.12f)),
                         modifier = Modifier.fillMaxWidth(),
-                        border = BorderStroke(1.dp, Color(0xFFBBDEFB))
+                        border = BorderStroke(1.dp, colors.primary.copy(alpha = 0.25f))
                     ) {
                         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Info, null, tint = Color(0xFF1565C0), modifier = Modifier.size(24.dp))
+                            Icon(Icons.Default.Info, null, tint = colors.primary, modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
                                 "Selecciona las especies para el bote ${boteNombre?.uppercase()}. Para algas, el ingreso sera por diametro del disco.",
                                 fontSize = 13.sp,
-                                color = Color(0xFF1565C0),
+                                color = colors.primary,
                                 lineHeight = 18.sp
                             )
                         }
@@ -129,16 +134,16 @@ internal fun ExtractedOperacionSpeciesDialog(
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
-                    Text("TIPOS DE MUESTREO POR ESPECIE", fontWeight = FontWeight.Black, fontSize = 11.sp, color = Color.Gray, letterSpacing = 1.sp)
+                    Text("Tipos de muestreo por especie", fontWeight = FontWeight.Black, fontSize = 11.sp, color = colors.onSurfaceVariant, letterSpacing = 1.sp)
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Surface(
                         modifier = Modifier
                             .heightIn(max = 140.dp)
                             .fillMaxWidth(),
-                        color = Color(0xFFF8F9FA),
+                        color = colors.surfaceVariant.copy(alpha = 0.45f),
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                        border = BorderStroke(1.dp, colors.outline.copy(alpha = 0.2f))
                     ) {
                         LazyColumn(modifier = Modifier.padding(12.dp)) {
                             items(selectedSpeciesIds) { id ->
@@ -149,12 +154,12 @@ internal fun ExtractedOperacionSpeciesDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Column {
-                                        Text(esp.com, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
+                                        Text(esp.com, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = colors.primary)
                                         Text(
                                             esp.sci ?: "",
                                             fontSize = 10.sp,
                                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                            color = Color.Gray
+                                            color = colors.onSurfaceVariant
                                         )
                                     }
                                     val sel = muestreoBySpeciesId[id] ?: setOf("L-P", "DENSIDAD")
@@ -178,7 +183,7 @@ internal fun ExtractedOperacionSpeciesDialog(
                                                 val next = if (sel.contains("DENSIDAD")) sel - "DENSIDAD" else sel + "DENSIDAD"
                                                 muestreoBySpeciesId[id] = next
                                             },
-                                            label = { Text("DENSIDAD", fontSize = 10.sp, fontWeight = FontWeight.Black) }
+                                            label = { Text("Densidad", fontSize = 10.sp, fontWeight = FontWeight.Black) }
                                         )
                                     }
                                 }
@@ -188,7 +193,7 @@ internal fun ExtractedOperacionSpeciesDialog(
                                     Text(
                                         "No hay especies seleccionadas. Marca al menos una especie para continuar con el muestreo.",
                                         fontSize = 13.sp,
-                                        color = Color.Gray,
+                                        color = colors.onSurfaceVariant,
                                         modifier = Modifier.padding(12.dp)
                                     )
                                 }
@@ -207,18 +212,18 @@ internal fun ExtractedOperacionSpeciesDialog(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(26.dp),
-                        border = BorderStroke(1.5.dp, Color.Gray)
+                        border = BorderStroke(1.5.dp, colors.outline)
                     ) {
-                        Text("CANCELAR", fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Text("Cancelar", fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
                     }
                     Button(
                         onClick = onContinue,
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(26.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF003366)),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                         enabled = selectedSpeciesIds.isNotEmpty()
                     ) {
-                        Text("CONTINUAR", fontWeight = FontWeight.Bold)
+                        Text("Continuar", fontWeight = FontWeight.Bold)
                     }
                 }
             }

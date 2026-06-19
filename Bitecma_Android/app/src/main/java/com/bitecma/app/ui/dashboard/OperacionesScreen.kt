@@ -241,6 +241,8 @@ private fun NuevaOperacionDialog(
 fun OperacionesScreen(navController: NavController, userId: Int) {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
+    val colors = MaterialTheme.colorScheme
+    val operacionesListState = rememberLazyListState()
     var isLoading by remember { mutableStateOf(true) }
     var isSyncingAll by remember { mutableStateOf(false) }
     var expandedOpId by remember { mutableStateOf<String?>(null) }
@@ -444,9 +446,14 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                 val lpIds = selectedSpeciesIds.filter { sid -> muestreoBySpeciesId[sid]?.contains("L-P") != false }
                 if (lpIds.isNotEmpty()) {
                     val lpM = (currentBote.lpMuestras ?: emptyMap()).toMutableMap()
-                    lpIds.forEach { sid ->
-                        lpM.putIfAbsent(sid.toString(), emptyMap())
-                    }
+                                        lpIds.forEach { sid ->
+                                            val species = especiesMaestras.firstOrNull { it.id == sid }
+                                            val buckets = (lpM[sid.toString()] ?: emptyMap()).toMutableMap()
+                                            defaultLpKindsForSpecies(species).forEach { kind ->
+                                                buckets.putIfAbsent(kind, emptyList())
+                                            }
+                                            lpM[sid.toString()] = buckets.toMap()
+                                        }
                     val updatedBote = currentBote.copy(lpMuestras = lpM.toMap())
                     currentBoteForData = updatedBote
 
@@ -676,10 +683,10 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         botesList.addAll(createDefaultBoteRows())
                         showBotesDialog = true
                     }
-                }) { Text("SI") }
+                }) { Text("Si") }
             },
             dismissButton = {
-                TextButton(onClick = { showConfirmDialog = false }) { Text("NO") }
+                TextButton(onClick = { showConfirmDialog = false }) { Text("No") }
             }
         )
     }
@@ -816,18 +823,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Operaciones", color = Color.White)
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(if (canSyncUi) Color(0xFF4CAF50) else Color.Gray, androidx.compose.foundation.shape.CircleShape)
-                                .border(1.dp, Color.White, androidx.compose.foundation.shape.CircleShape)
-                        )
-                    }
-                },
+                title = { Text("Operaciones", color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = Color.White)
@@ -858,7 +854,12 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         Icon(Icons.Default.Add, contentDescription = "Nueva", tint = Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = colors.bitecmaNavyStrong,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White,
+                )
             )
         }
     ) { padding ->
@@ -883,16 +884,44 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                 }
             }
 
+            val regionHeaderIndexForKey: (String) -> Int = regionIndex@{ targetRegionKey ->
+                var index = 1
+                grouped.forEach { (regionId, ops) ->
+                    val key = regionId?.toString() ?: "null"
+                    if (key == targetRegionKey) return@regionIndex index
+                    index += 1
+                    if (regionExpanded[key] == true) {
+                        index += ops.size
+                    }
+                }
+                0
+            }
+            val operationIndexForId: (String) -> Int? = operationIndex@{ targetOpId ->
+                var index = 1
+                grouped.forEach { (regionId, ops) ->
+                    val key = regionId?.toString() ?: "null"
+                    index += 1
+                    if (regionExpanded[key] == true) {
+                        ops.forEach { opItem ->
+                            if (opItem.op.id == targetOpId) return@operationIndex index
+                            index += 1
+                        }
+                    }
+                }
+                null
+            }
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .background(MaterialTheme.colorScheme.background)
-                    .padding(16.dp)
+                    .padding(16.dp),
+                state = operacionesListState
             ) {
                 item {
-                    Text("Operaciones", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("Cada operación agrupa botes con sus datos técnicos", color = Color.Gray, fontSize = 12.sp)
+                    Text("Operaciones", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = colors.bitecmaNavy)
+                    Text("Cada operación agrupa botes con sus datos técnicos", color = colors.bitecmaSubtleText, fontSize = 12.sp)
                     Spacer(modifier = Modifier.height(16.dp))
                     OperacionesFiltersHeader(
                         textoBusqueda = textoBusqueda,
@@ -910,19 +939,21 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                 }
                 if (grouped.isEmpty()) {
                     item {
-                        Card(
+                        Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            shape = RoundedCornerShape(16.dp),
+                            color = colors.bitecmaCardBackground,
+                            border = BorderStroke(1.dp, colors.bitecmaBorder)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text("Sin resultados", fontWeight = FontWeight.Bold)
+                                Text("Sin resultados", fontWeight = FontWeight.Bold, color = colors.bitecmaNavy)
                                 Text(
                                     "No hay operaciones que coincidan con los filtros actuales.",
                                     fontSize = 12.sp,
-                                    color = Color.Gray
+                                    color = colors.bitecmaSubtleText
                                 )
                             }
-                        }
+                        } 
                     }
                 }
                 grouped.forEach { (regionId, ops) ->
@@ -932,7 +963,18 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                             titulo = regionId?.let { regionLabelById[it] } ?: "Sin región",
                             totalOperaciones = ops.size,
                             isExpanded = regionExpanded[regionKey] ?: false,
-                            onToggle = { regionExpanded[regionKey] = !(regionExpanded[regionKey] ?: false) },
+                            onToggle = {
+                                val nextExpanded = !(regionExpanded[regionKey] ?: false)
+                                regionExpanded[regionKey] = nextExpanded
+                                if (nextExpanded) {
+                                    val headerIndex = regionHeaderIndexForKey(regionKey)
+                                    val targetIndex = if (ops.isNotEmpty()) headerIndex + 1 else headerIndex
+                                    scope.launch {
+                                        delay(80)
+                                        operacionesListState.animateScrollToItem(targetIndex)
+                                    }
+                                }
+                            },
                         )
                     }
 
@@ -948,6 +990,12 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                                     } else {
                                         lastExpandClickAt = System.currentTimeMillis()
                                         expandedOpId = itemActual.op.id
+                                        operationIndexForId(itemActual.op.id)?.let { targetIndex ->
+                                            scope.launch {
+                                                delay(80)
+                                                operacionesListState.animateScrollToItem(targetIndex)
+                                            }
+                                        }
                                         if (itemActual.op.botes.isNullOrEmpty() && AppState.isEffectivelyOnline()) scope.launch {
                                             val refreshed = runCatching {
                                                 DataManager.refreshOperacionDetail(ctx, itemActual.op.id)
@@ -1099,17 +1147,17 @@ fun BoteRowItem(
     onDelete: () -> Unit,
     onUpdate: (OperacionBoteDto) -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var showUnitWarning by remember { mutableStateOf(false) }
     var nextUnitType by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     val zonaFocusRequester = remember { FocusRequester() }
     val buzoFocusRequester = remember { FocusRequester() }
 
-    val isDark = isSystemInDarkTheme()
-    val comboBg = if (isDark) Color(0xFF0D47A1) else Color.White
-    val comboText = if (isDark) Color.White else Color.Black
-    val comboBorder = if (isDark) Color(0xFF1976D2) else Color(0xFFF1F3F5)
-    val labelColor = if (isDark) Color(0xFFBBDEFB) else Color.Gray
+    val comboBg = colors.surface
+    val comboText = colors.onSurface
+    val comboBorder = colors.outline.copy(alpha = 0.35f)
+    val labelColor = colors.onSurfaceVariant
     val isIntermareal = bote.submareal == 0 || bote.nombre?.equals("Intermareal", ignoreCase = true) == true
 
     Row(
@@ -1118,7 +1166,7 @@ fun BoteRowItem(
             .padding(vertical = 12.dp, horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(index.toString(), Modifier.weight(0.3f), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isDark) Color.LightGray else Color.Gray)
+        Text(index.toString(), Modifier.weight(0.3f), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
 
         BasicTextField(
             value = bote.zona?.toString() ?: "",
@@ -1160,7 +1208,7 @@ fun BoteRowItem(
                         selected = !isIntermareal,
                         label = "Sub",
                         icon = Icons.Default.DirectionsBoat,
-                        activeColor = Color(0xFF003366),
+                        activeColor = colors.secondary,
                         inactiveTextColor = comboText,
                         borderColor = comboBorder,
                         onClick = {
@@ -1177,7 +1225,7 @@ fun BoteRowItem(
                         selected = isIntermareal,
                         label = "Inter",
                         icon = Icons.Default.DirectionsWalk,
-                        activeColor = Color(0xFF5E35B1),
+                        activeColor = colors.secondary,
                         inactiveTextColor = comboText,
                         borderColor = comboBorder,
                         onClick = {
@@ -1198,7 +1246,7 @@ fun BoteRowItem(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.5.dp, if (isSearchActive) Color(0xFF00897B) else comboBorder, RoundedCornerShape(8.dp))
+                    .border(1.5.dp, if (isSearchActive) colors.tertiary else comboBorder, RoundedCornerShape(8.dp))
                     .background(comboBg, RoundedCornerShape(8.dp))
                     .padding(10.dp),
                 color = Color.Transparent
@@ -1250,7 +1298,7 @@ fun BoteRowItem(
                             Icon(
                                 Icons.Default.Search,
                                 contentDescription = "Buscar bote maestro",
-                                tint = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366),
+                                tint = colors.primary,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -1258,7 +1306,7 @@ fun BoteRowItem(
                         Icon(
                             Icons.Default.Waves,
                             contentDescription = null,
-                            tint = if (isDark) Color(0xFFB39DDB) else Color(0xFF5E35B1),
+                            tint = colors.secondary,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -1331,14 +1379,14 @@ fun BoteRowItem(
         }
 
         IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Default.Delete, null, tint = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
+            Icon(Icons.Default.Delete, null, tint = colors.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
         }
     }
 
     if (showUnitWarning) {
         AlertDialog(
             onDismissRequest = { showUnitWarning = false },
-            title = { Text("BITECMA Dice:", fontWeight = FontWeight.Black, color = Color(0xFF003366)) },
+            title = { Text("BITECMA Dice:", fontWeight = FontWeight.Black, color = colors.primary) },
             text = { Text("Al cambiar la unidad de muestreo, solo se perderán los datos de densidad. ¿Desea continuar?", fontSize = 14.sp) },
             confirmButton = {
                 Button(
@@ -1347,10 +1395,10 @@ fun BoteRowItem(
                         showUnitWarning = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
-                ) { Text("SÍ, CAMBIAR") }
+                ) { Text("Si, cambiar") }
             },
             dismissButton = {
-                TextButton(onClick = { showUnitWarning = false }) { Text("CANCELAR", color = Color.Gray) }
+                TextButton(onClick = { showUnitWarning = false }) { Text("Cancelar", color = colors.onSurfaceVariant) }
             }
         )
     }
@@ -1364,6 +1412,7 @@ fun BoteMaestroSearchDialog(
     onSelect: (BoteMaestroDto) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var query by remember { mutableStateOf("") }
     
     // Estado para menús abatibles (jerarquía)
@@ -1429,12 +1478,11 @@ fun BoteMaestroSearchDialog(
             (b.nmatricula ?: "").contains(query, true)
     }
 
-    val isDark = isSystemInDarkTheme()
-    val bgColor = if (isDark) Color(0xFF111B2B) else Color.White
-    val headerBg = if (isDark) Color(0xFF0D47A1) else Color(0xFFF8F9FA)
-    val textColor = if (isDark) Color.White else Color.Black
-    val comboBg = if (isDark) Color(0xFF0D47A1) else Color.White
-    val comboBorder = if (isDark) Color(0xFF1976D2) else Color(0xFFF1F3F5)
+    val bgColor = colors.surface
+    val headerBg = colors.surfaceVariant
+    val textColor = colors.onSurface
+    val comboBg = colors.surface
+    val comboBorder = colors.outline.copy(alpha = 0.35f)
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1446,9 +1494,9 @@ fun BoteMaestroSearchDialog(
                 Box(
                     modifier = Modifier.fillMaxWidth().background(headerBg).padding(16.dp)
                 ) {
-                    Text("SELECCIONAR BOTE MAESTRO", fontWeight = FontWeight.Black, fontSize = 16.sp, color = if (isDark) Color.White else Color(0xFF003366))
+                    Text("Seleccionar bote", fontWeight = FontWeight.Black, fontSize = 16.sp, color = colors.primary)
                     IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd).size(24.dp)) {
-                        Icon(Icons.Default.Close, null, tint = if (isDark) Color.LightGray else Color.Gray)
+                        Icon(Icons.Default.Close, null, tint = colors.onSurfaceVariant)
                     }
                 }
 
@@ -1456,24 +1504,24 @@ fun BoteMaestroSearchDialog(
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
-                        placeholder = { Text("Buscar por nombre, RPA o matrícula...", color = if (isDark) Color.LightGray else Color.Gray) },
+                        placeholder = { Text("Buscar por nombre, RPA o matrícula...", color = colors.onSurfaceVariant) },
                         modifier = Modifier.fillMaxWidth().background(comboBg, RoundedCornerShape(12.dp)),
-                        leadingIcon = { Icon(Icons.Default.Search, null, tint = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366)) },
+                        leadingIcon = { Icon(Icons.Default.Search, null, tint = colors.primary) },
                         shape = RoundedCornerShape(12.dp),
                         textStyle = TextStyle(color = textColor),
                         colors = OutlinedTextFieldDefaults.colors(
                             unfocusedBorderColor = comboBorder,
-                            focusedBorderColor = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366),
+                            focusedBorderColor = colors.primary,
                             unfocusedContainerColor = comboBg,
                             focusedContainerColor = comboBg
                         )
                     )
                     
                     Spacer(Modifier.height(16.dp))
-                    Text("JERARQUÍA: REGIÓN > CALETA > BOTE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.Gray, letterSpacing = 1.sp)
+                    Text("JERARQUÍA: REGIÓN > CALETA > BOTE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = colors.onSurfaceVariant, letterSpacing = 1.sp)
                     if (!opCaleta.isNullOrBlank()) {
                         Spacer(Modifier.height(6.dp))
-                        Text("Filtrado por caleta: ${opCaleta.uppercase()}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isDark) Color(0xFFBBDEFB) else Color(0xFF003366))
+                        Text("Filtrado por caleta: ${opCaleta.uppercase()}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.primary)
                     }
                     Spacer(Modifier.height(8.dp))
 
@@ -1483,7 +1531,7 @@ fun BoteMaestroSearchDialog(
                                 Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                                     Text(
                                         text = if (!opCaleta.isNullOrBlank()) "No hay botes para la caleta seleccionada" else "No hay botes disponibles",
-                                        color = Color.Gray,
+                                        color = colors.onSurfaceVariant,
                                         textAlign = TextAlign.Center
                                     )
                                 }
@@ -1538,7 +1586,7 @@ fun BoteMaestroSearchDialog(
                             if (queryFilteredBotes.isEmpty()) {
                                 item {
                                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                                        Text("No se encontraron botes con '$query'", color = Color.Gray)
+                                        Text("No se encontraron botes con '$query'", color = colors.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -1552,12 +1600,13 @@ fun BoteMaestroSearchDialog(
 
 @Composable
 fun HierarchicalItem(label: String, isExpanded: Boolean, onClick: () -> Unit, level: Int) {
+    val colors = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp, horizontal = (level * 8).dp)
             .clickable { onClick() },
-        color = if (isExpanded) Color(0xFFE3F2FD).copy(alpha = 0.5f) else Color.Transparent,
+        color = if (isExpanded) colors.primary.copy(alpha = 0.12f) else Color.Transparent,
         shape = RoundedCornerShape(8.dp)
     ) {
         Row(
@@ -1567,7 +1616,7 @@ fun HierarchicalItem(label: String, isExpanded: Boolean, onClick: () -> Unit, le
             Icon(
                 if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 null,
-                tint = if (isExpanded) Color(0xFF003366) else Color.Gray,
+                tint = if (isExpanded) colors.primary else colors.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
             Spacer(Modifier.width(12.dp))
@@ -1575,7 +1624,7 @@ fun HierarchicalItem(label: String, isExpanded: Boolean, onClick: () -> Unit, le
                 label,
                 fontSize = (14 - level).sp,
                 fontWeight = if (isExpanded) FontWeight.Black else FontWeight.Bold,
-                color = if (isExpanded) Color(0xFF003366) else Color.DarkGray
+                color = if (isExpanded) colors.primary else colors.onSurface
             )
         }
     }
@@ -1583,24 +1632,25 @@ fun HierarchicalItem(label: String, isExpanded: Boolean, onClick: () -> Unit, le
 
 @Composable
 fun BoteFinalItem(b: BoteMaestroDto, onSelect: (BoteMaestroDto) -> Unit) {
+    val colors = MaterialTheme.colorScheme
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp, horizontal = 24.dp)
             .clickable { onSelect(b) },
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Color(0xFFF1F3F5)),
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
+        border = BorderStroke(1.dp, colors.outline.copy(alpha = 0.2f)),
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.DirectionsBoat, null, tint = Color(0xFF003366), modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.DirectionsBoat, null, tint = colors.primary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Column {
                 Text(b.nombre ?: "S/N", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text("RPA: ${b.nrpa ?: "—"} · MAT: ${b.nmatricula ?: "—"}", fontSize = 11.sp, color = Color.Gray)
+                Text("RPA: ${b.nrpa ?: "—"} · MAT: ${b.nmatricula ?: "—"}", fontSize = 11.sp, color = colors.onSurfaceVariant)
             }
             Spacer(Modifier.weight(1f))
-            Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF00897B), modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.CheckCircle, null, tint = colors.tertiary, modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -1667,5 +1717,5 @@ private fun LpIngresoDialog(
 @Composable
 fun MyDatePickerDialog(onDateSelected: (String) -> Unit, onDismiss: () -> Unit) {
     val datePickerState = rememberDatePickerState()
-    DatePickerDialog(onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = { datePickerState.selectedDateMillis?.let { val date = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate(); val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd"); onDateSelected(date.format(fmt)) }; onDismiss() }) { Text("OK") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }) { DatePicker(state = datePickerState) }
+    DatePickerDialog(onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = { datePickerState.selectedDateMillis?.let { val date = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate(); val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd"); onDateSelected(date.format(fmt)) }; onDismiss() }) { Text("Aceptar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }) { DatePicker(state = datePickerState) }
 }

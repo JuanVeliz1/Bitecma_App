@@ -30,6 +30,7 @@ import com.bitecma.app.ui.bitecmaCardBackground
 import com.bitecma.app.ui.bitecmaDangerBg
 import com.bitecma.app.ui.bitecmaMutedText
 import com.bitecma.app.ui.bitecmaNavy
+import com.bitecma.app.ui.bitecmaNavyStrong
 import com.bitecma.app.ui.bitecmaSoftBackground
 import com.bitecma.app.ui.bitecmaSubtleText
 import com.bitecma.app.ui.bitecmaTeal
@@ -50,13 +51,13 @@ fun ForgotPasswordScreen(navController: NavController, initialEmail: String) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Cambiar Contraseña", color = colors.onPrimary) },
+                title = { Text("Cambiar Contraseña", color = androidx.compose.ui.graphics.Color.White) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = colors.onPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás", tint = androidx.compose.ui.graphics.Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.primary)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.bitecmaNavyStrong)
             )
         }
     ) { padding ->

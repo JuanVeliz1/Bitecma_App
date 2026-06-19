@@ -10,7 +10,10 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -24,6 +27,7 @@ import com.bitecma.app.data.AppState
 import com.bitecma.app.data.DataManager
 import com.bitecma.app.sync.SyncScheduler
 import com.bitecma.app.ui.BitecmaTheme
+import com.bitecma.app.ui.bitecmaNavyStrong
 import com.bitecma.app.utils.NetworkMonitor
 
 class MainActivity : ComponentActivity() {
@@ -83,9 +87,20 @@ class MainActivity : ComponentActivity() {
             }
             
             BitecmaTheme(darkTheme = isDarkMode) {
+                val colors = MaterialTheme.colorScheme
+                @Suppress("DEPRECATION")
+                SideEffect {
+                    val controller = WindowCompat.getInsetsController(window, window.decorView)
+                    val statusBarColor = colors.bitecmaNavyStrong
+                    val navigationBarColor = colors.background
+                    window.statusBarColor = statusBarColor.toArgb()
+                    window.navigationBarColor = navigationBarColor.toArgb()
+                    controller.isAppearanceLightStatusBars = false
+                    controller.isAppearanceLightNavigationBars = navigationBarColor.luminance() > 0.5f
+                }
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = colors.background
                 ) {
                     if (!cacheReady) {
                         Box(

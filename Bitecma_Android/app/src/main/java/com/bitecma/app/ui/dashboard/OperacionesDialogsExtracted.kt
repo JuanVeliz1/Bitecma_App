@@ -156,6 +156,7 @@ internal fun ExtractedLpIngresoDialog(
     onUpdateSamples: (List<LpSampleDto>) -> Unit,
     onRemoveSpecies: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     val normalizedSampleKind = remember(sampleKind) { normalizeLpKind(sampleKind) }
     var lText by remember(speciesId, normalizedSampleKind) { mutableStateOf("") }
     var pText by remember(speciesId, normalizedSampleKind) { mutableStateOf("") }
@@ -277,13 +278,13 @@ internal fun ExtractedLpIngresoDialog(
         Surface(
             modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.92f),
             shape = RoundedCornerShape(18.dp),
-            color = Color.White
+            color = colors.surface
         ) {
             Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(speciesName, fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color(0xFF003366))
-                        Text("${lpKindLabel(normalizedSampleKind)} · ${samples.size} muestra(s)", fontSize = 12.sp, color = Color.Gray)
+                        Text(speciesName, fontWeight = FontWeight.Black, fontSize = 16.sp, color = colors.primary)
+                        Text("${lpKindLabel(normalizedSampleKind)} · ${samples.size} muestra(s)", fontSize = 12.sp, color = colors.onSurfaceVariant)
                     }
                     IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, null) }
                 }
@@ -292,9 +293,9 @@ internal fun ExtractedLpIngresoDialog(
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFFF2FBF8),
+                    color = colors.tertiaryContainer.copy(alpha = 0.35f),
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color(0xFFE0F2F1))
+                    border = BorderStroke(1.dp, colors.outline.copy(alpha = 0.2f))
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -357,8 +358,12 @@ internal fun ExtractedLpIngresoDialog(
                         }
                         Button(
                             onClick = { submitSample() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
-                        ) { Text("Agregar", fontWeight = FontWeight.Black) }
+                            modifier = Modifier.height(56.dp).widthIn(min = 112.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.tertiary)
+                        ) {
+                            Text("+ Agregar", fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
+                        }
                     }
                 }
 
@@ -367,19 +372,19 @@ internal fun ExtractedLpIngresoDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFF1F3F5))
+                        .background(colors.surfaceVariant)
                         .padding(vertical = 10.dp, horizontal = 12.dp)
                 ) {
-                    Text("#", modifier = Modifier.width(44.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                    Text("#", modifier = Modifier.width(44.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = colors.onSurface)
                     Text(
                         if (normalizedSampleKind == "D") "D (cm)" else "L (mm)",
                         modifier = Modifier.weight(1f),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
-                        color = Color.DarkGray
+                        color = colors.onSurface
                     )
                     if (normalizedSampleKind == "LP") {
-                        Text("P (g)", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                        Text("P (g)", modifier = Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = colors.onSurface)
                     }
                     Spacer(modifier = Modifier.width(140.dp))
                 }
@@ -423,7 +428,7 @@ internal fun ExtractedLpIngresoDialog(
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD32F2F))
                             ) { Text("Eliminar", fontSize = 11.sp) }
                         }
-                        HorizontalDivider(color = Color(0xFFF1F3F5))
+                        HorizontalDivider(color = colors.outline.copy(alpha = 0.2f))
                     }
                 }
 
@@ -432,15 +437,17 @@ internal fun ExtractedLpIngresoDialog(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(
                         onClick = onDismiss,
-                        modifier = Modifier.weight(1f).height(48.dp),
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         shape = RoundedCornerShape(999.dp)
-                    ) { Text("Cerrar") }
+                    ) { Text("Cerrar", maxLines = 1) }
                     OutlinedButton(
                         onClick = onRemoveSpecies,
-                        modifier = Modifier.weight(1f).height(48.dp),
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         shape = RoundedCornerShape(999.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD32F2F))
-                    ) { Text("Quitar especie") }
+                    ) { Text("Quitar especie", maxLines = 1) }
                 }
             }
         }

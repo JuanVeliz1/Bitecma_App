@@ -114,6 +114,7 @@ internal fun ExtractedOperacionDataDialog(
     onDismiss: () -> Unit
 ) {
     val ctx = LocalContext.current
+    val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     var op by remember(opInitial.id) { mutableStateOf(opInitial) }
     var tab by remember { mutableStateOf("DENSIDAD") }
@@ -226,7 +227,7 @@ internal fun ExtractedOperacionDataDialog(
         Surface(
             modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.92f),
             shape = RoundedCornerShape(20.dp),
-            color = Color.White,
+            color = colors.surface,
             tonalElevation = 12.dp
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -238,7 +239,7 @@ internal fun ExtractedOperacionDataDialog(
                 ) {
                     Column(modifier = Modifier.align(Alignment.CenterStart)) {
                         Text(
-                            "DATOS DE OPERACION",
+                            "Datos de operacion",
                             color = Color.White,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Black,
@@ -258,12 +259,12 @@ internal fun ExtractedOperacionDataDialog(
 
                 Column(modifier = Modifier.weight(1f).padding(16.dp)) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(regionLabel ?: "Sin región", fontWeight = FontWeight.Black, color = Color(0xFF003366), fontSize = 15.sp)
+                        Text(regionLabel ?: "Sin región", fontWeight = FontWeight.Black, color = colors.primary, fontSize = 15.sp)
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "${op.sector} · ${op.fechaInicio.orEmpty()}${if (!op.fechaFin.isNullOrBlank()) " -> ${op.fechaFin}" else ""}",
                             fontSize = 12.sp,
-                            color = Color.Gray
+                            color = colors.onSurfaceVariant
                         )
                     }
 
@@ -272,18 +273,18 @@ internal fun ExtractedOperacionDataDialog(
                     if (botes.isEmpty()) {
                         Surface(
                             modifier = Modifier.fillMaxSize(),
-                            color = Color(0xFFF8F9FA),
+                            color = colors.surfaceVariant.copy(alpha = 0.45f),
                             shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                            border = BorderStroke(1.dp, colors.outline.copy(alpha = 0.25f))
                         ) {
                             Column(
                                 modifier = Modifier.fillMaxSize().padding(18.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
                             ) {
-                                Text("Sin datos", fontWeight = FontWeight.Black, color = Color(0xFF003366), fontSize = 16.sp)
+                                Text("Sin datos", fontWeight = FontWeight.Black, color = colors.primary, fontSize = 16.sp)
                                 Spacer(Modifier.height(6.dp))
-                                Text("Esta operación no tiene botes registrados.", color = Color.Gray, fontSize = 13.sp, textAlign = TextAlign.Center)
+                                Text("Esta operación no tiene botes registrados.", color = colors.onSurfaceVariant, fontSize = 13.sp, textAlign = TextAlign.Center)
                             }
                         }
                     } else {
@@ -310,10 +311,10 @@ internal fun ExtractedOperacionDataDialog(
                                         )
                                     },
                                     colors = AssistChipDefaults.assistChipColors(
-                                        containerColor = if (isSel) Color(0xFFE3F2FD) else Color(0xFFF8F9FA),
-                                        labelColor = Color(0xFF003366)
+                                        containerColor = if (isSel) colors.primary.copy(alpha = 0.16f) else colors.surfaceVariant.copy(alpha = 0.5f),
+                                        labelColor = if (isSel) colors.primary else colors.onSurface
                                     ),
-                                    border = BorderStroke(1.dp, if (isSel) Color(0xFF003366) else Color(0xFFF1F3F5))
+                                    border = BorderStroke(1.dp, if (isSel) colors.primary else colors.outline.copy(alpha = 0.25f))
                                 )
                             }
                         }
@@ -355,12 +356,12 @@ internal fun ExtractedOperacionDataDialog(
                                     extractedOpDataDensTipoPluralLabel(selectedBote?.densTipo),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Black,
-                                    color = Color(0xFF003366)
+                                    color = colors.primary
                                 )
                                 Button(
                                     onClick = { ensureDensityEditorReady() },
                                     shape = RoundedCornerShape(26.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF003366))
+                                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
                                 ) {
                                     Text(
                                         if (isQuadrantOverview) "Agregar Cuadrante" else "Agregar Transecto",
@@ -372,7 +373,7 @@ internal fun ExtractedOperacionDataDialog(
                                     "${units.size} ${if (isQuadrantOverview) "unidad(es)" else "transecto(s)"}",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.Gray
+                                    color = colors.onSurfaceVariant
                                 )
                             }
 
@@ -380,16 +381,16 @@ internal fun ExtractedOperacionDataDialog(
 
                             Surface(
                                 modifier = Modifier.fillMaxSize(),
-                                color = Color.White,
+                                color = colors.surface,
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                                border = BorderStroke(1.dp, colors.outline.copy(alpha = 0.2f))
                             ) {
                                 if (units.isEmpty()) {
                                     Box(Modifier.fillMaxSize().padding(18.dp), contentAlignment = Alignment.Center) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text(
                                                 "Aun no hay $densityUnitLabel registrados",
-                                                color = Color.Gray,
+                                                color = colors.onSurfaceVariant,
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Spacer(Modifier.height(8.dp))
@@ -399,7 +400,7 @@ internal fun ExtractedOperacionDataDialog(
                                                 } else {
                                                     "Abre el formulario para crear transectos, replicar el primero y definir especies por cada transecto."
                                                 },
-                                                color = Color.Gray,
+                                                color = colors.onSurfaceVariant,
                                                 textAlign = TextAlign.Center,
                                                 fontSize = 12.sp
                                             )
@@ -407,7 +408,7 @@ internal fun ExtractedOperacionDataDialog(
                                             Button(
                                                 onClick = { ensureDensityEditorReady() },
                                                 shape = RoundedCornerShape(22.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF003366))
+                                                colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
                                             ) {
                                                 Text(if (isQuadrantOverview) "Agregar cuadrante" else "Agregar transecto", fontWeight = FontWeight.Bold)
                                             }
@@ -425,13 +426,13 @@ internal fun ExtractedOperacionDataDialog(
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .background(Color(0xFFF1F3F5))
+                                                    .background(colors.surfaceVariant)
                                                     .padding(vertical = 10.dp, horizontal = 12.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("#", modifier = Modifier.width(40.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
-                                                Text("AREA", modifier = Modifier.width(70.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
-                                                Text("SUSTRATO", modifier = Modifier.width(100.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
+                                                Text("#", modifier = Modifier.width(40.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = colors.onSurface)
+                                                Text("Area", modifier = Modifier.width(70.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = colors.onSurface, textAlign = TextAlign.Center)
+                                                Text("Sustrato", modifier = Modifier.width(100.dp), fontSize = 11.sp, fontWeight = FontWeight.Black, color = colors.onSurface)
                                                 speciesIds.forEach { sid ->
                                                     val name = especiesById[sid]?.com ?: "ID$sid"
                                                     Text(
@@ -439,7 +440,7 @@ internal fun ExtractedOperacionDataDialog(
                                                         modifier = Modifier.width(82.dp),
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Black,
-                                                        color = Color.DarkGray,
+                                                        color = colors.onSurface,
                                                         textAlign = TextAlign.Center
                                                     )
                                                 }
@@ -464,12 +465,12 @@ internal fun ExtractedOperacionDataDialog(
                                                                 modifier = Modifier.width(82.dp),
                                                                 fontSize = 12.sp,
                                                                 fontWeight = FontWeight.Black,
-                                                                color = Color(0xFF00897B),
+                                                                color = colors.tertiary,
                                                                 textAlign = TextAlign.Center
                                                             )
                                                         }
                                                     }
-                                                    HorizontalDivider(color = Color(0xFFF1F3F5))
+                                                    HorizontalDivider(color = colors.outline.copy(alpha = 0.2f))
                                                 }
                                             }
                                         }
@@ -504,9 +505,9 @@ internal fun ExtractedOperacionDataDialog(
 
                             Surface(
                                 modifier = Modifier.fillMaxSize(),
-                                color = Color.White,
+                                color = colors.surface,
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                                border = BorderStroke(1.dp, colors.outline.copy(alpha = 0.2f))
                             ) {
                                 Column(modifier = Modifier.fillMaxSize()) {
                                     Row(
@@ -518,28 +519,28 @@ internal fun ExtractedOperacionDataDialog(
                                             "${selectedLpIds.size} especie(s)",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.Gray,
+                                            color = colors.onSurfaceVariant,
                                             modifier = Modifier.weight(1f)
                                         )
                                         OutlinedButton(
                                             onClick = { showLpSpeciesPicker = true },
                                             shape = RoundedCornerShape(18.dp),
-                                            border = BorderStroke(1.dp, Color(0xFF003366)),
-                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF003366))
+                                            border = BorderStroke(1.dp, colors.primary),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.primary)
                                         ) {
                                             Text("+ Especies", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         }
                                         Spacer(Modifier.width(8.dp))
                                         Surface(
-                                            color = Color(0xFFE8F5E9),
+                                            color = colors.tertiaryContainer.copy(alpha = 0.45f),
                                             shape = RoundedCornerShape(12.dp)
                                         ) {
                                             Column(
                                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
-                                                Text(totalLpSamples.toString(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF2E7D32))
-                                                Text("Muestras", fontSize = 8.sp, color = Color(0xFF2E7D32))
+                                                Text(totalLpSamples.toString(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.tertiary)
+                                                Text("Muestras", fontSize = 8.sp, color = colors.tertiary)
                                             }
                                         }
                                     }
@@ -547,21 +548,21 @@ internal fun ExtractedOperacionDataDialog(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .background(Color(0xFFF1F3F5))
+                                            .background(colors.surfaceVariant)
                                             .padding(vertical = 10.dp, horizontal = 12.dp)
                                     ) {
-                                        Text("ESPECIE", modifier = Modifier.weight(1.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray)
-                                        Text("MUESTRAS", modifier = Modifier.weight(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
-                                        Text("TIPO", modifier = Modifier.weight(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.DarkGray, textAlign = TextAlign.Center)
+                                        Text("Especie", modifier = Modifier.weight(1.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = colors.onSurface)
+                                        Text("Muestras", modifier = Modifier.weight(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = colors.onSurface, textAlign = TextAlign.Center)
+                                        Text("Tipo", modifier = Modifier.weight(0.6f), fontSize = 11.sp, fontWeight = FontWeight.Black, color = colors.onSurface, textAlign = TextAlign.Center)
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Spacer(modifier = Modifier.width(88.dp))
+                                        Spacer(modifier = Modifier.width(96.dp))
                                     }
 
                                     if (lpRows.isEmpty()) {
                                         Box(Modifier.fillMaxSize().padding(18.dp), contentAlignment = Alignment.Center) {
                                             Text(
-                                                "No hay especies habilitadas para Peso-Longitud en este bote.",
-                                                color = Color.Gray,
+                                                "Aun no hay especies registradas en esta seccion.",
+                                                color = colors.onSurfaceVariant,
                                                 textAlign = TextAlign.Center
                                             )
                                         }
@@ -575,14 +576,14 @@ internal fun ExtractedOperacionDataDialog(
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Column(modifier = Modifier.weight(1.6f)) {
-                                                        Text(spName, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF003366))
+                                                        Text(spName, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = colors.primary)
                                                         val sci = sp?.sci
                                                         if (!sci.isNullOrBlank()) {
-                                                            Text(sci, fontSize = 11.sp, color = Color.Gray, maxLines = 1)
+                                                            Text(sci, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1)
                                                         }
                                                     }
-                                                    Text(sampleCount.toString(), modifier = Modifier.weight(0.6f), fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF00897B), textAlign = TextAlign.Center)
-                                                    Text(lpKindLabel(sampleKind), modifier = Modifier.weight(0.6f), fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF00897B), textAlign = TextAlign.Center)
+                                                    Text(sampleCount.toString(), modifier = Modifier.weight(0.6f), fontSize = 13.sp, fontWeight = FontWeight.Black, color = colors.tertiary, textAlign = TextAlign.Center)
+                                                    Text(lpKindLabel(sampleKind), modifier = Modifier.weight(0.6f), fontSize = 12.sp, fontWeight = FontWeight.Black, color = colors.tertiary, textAlign = TextAlign.Center)
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                     Button(
                                                         onClick = {
@@ -591,11 +592,14 @@ internal fun ExtractedOperacionDataDialog(
                                                                 sampleKind = sampleKind,
                                                             )
                                                         },
-                                                        modifier = Modifier.width(88.dp),
-                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
-                                                    ) { Text("Ingresar", fontWeight = FontWeight.Black, fontSize = 12.sp) }
+                                                        modifier = Modifier.width(96.dp).height(40.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = colors.tertiary)
+                                                    ) {
+                                                        Text("Ingresar", fontWeight = FontWeight.Black, fontSize = 11.sp, maxLines = 1, textAlign = TextAlign.Center)
+                                                    }
                                                 }
-                                                HorizontalDivider(color = Color(0xFFF1F3F5))
+                                                HorizontalDivider(color = colors.outline.copy(alpha = 0.2f))
                                             }
                                         }
                                     }
@@ -609,8 +613,8 @@ internal fun ExtractedOperacionDataDialog(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     shape = RoundedCornerShape(999.dp),
-                    border = BorderStroke(1.5.dp, Color.Gray)
-                ) { Text("CERRAR", fontWeight = FontWeight.Bold, color = Color.Gray) }
+                    border = BorderStroke(1.5.dp, colors.outline)
+                ) { Text("Cerrar", fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant) }
             }
         }
     }
@@ -652,15 +656,13 @@ internal fun ExtractedOperacionDataDialog(
         ExtractedSpeciesPickerDialog(
             title = "Especies Peso-Longitud",
             species = especiesMaestras.sortedBy { it.com },
-            currentSelectedIds = densitySelectedSpeciesIds.toSet(),
+            currentSelectedIds = selectedBote.lpMuestras
+                ?.keys
+                ?.mapNotNull { it.toIntOrNull() }
+                ?.toSet()
+                ?: emptySet(),
             onDismiss = { showLpSpeciesPicker = false },
             onApply = { ids ->
-                densitySelectedSpeciesIds.clear()
-                densitySelectedSpeciesIds.addAll(ids.sorted())
-                densityMuestreoBySpeciesId.clear()
-                ids.forEach { sidLocal ->
-                    densityMuestreoBySpeciesId[sidLocal] = setOf("L-P")
-                }
                 val nextOp = updateSelectedBote { b ->
                     val lpM = (b.lpMuestras ?: emptyMap()).toMutableMap()
                     ids.forEach { sidLocal ->

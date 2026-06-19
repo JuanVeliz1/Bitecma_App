@@ -60,6 +60,7 @@ internal fun ExtractedNuevaOperacionDialog(
     onCreateClick: () -> Unit,
 ) {
     if (!show) return
+    val colors = MaterialTheme.colorScheme
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -71,15 +72,14 @@ internal fun ExtractedNuevaOperacionDialog(
                 .fillMaxHeight(0.9f)
                 .padding(vertical = 16.dp),
             shape = RoundedCornerShape(20.dp),
-            color = if (isSystemInDarkTheme()) Color(0xFF111B2B) else Color.White,
+            color = colors.surface,
             tonalElevation = 12.dp
         ) {
-            val isDark = isSystemInDarkTheme()
-            val comboBg = if (isDark) Color(0xFF0D47A1) else Color.White
-            val comboText = if (isDark) Color.White else Color.Black
-            val comboBorder = if (isDark) Color(0xFF1976D2) else Color(0xFFF1F3F5)
-            val labelColor = if (isDark) Color(0xFFBBDEFB) else Color.Gray
-            val accentColor = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366)
+            val comboBg = colors.surface
+            val comboText = colors.onSurface
+            val comboBorder = colors.outline.copy(alpha = 0.35f)
+            val labelColor = colors.onSurfaceVariant
+            val accentColor = colors.primary
             var expandedReg by remember { mutableStateOf(false) }
             var expandedTipo by remember { mutableStateOf(false) }
 
@@ -95,11 +95,15 @@ internal fun ExtractedNuevaOperacionDialog(
                         .padding(20.dp)
                 ) {
                     Text(
-                        "NUEVA OPERACION",
+                        "Nueva operacion",
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(end = 44.dp),
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
+                        letterSpacing = 1.sp,
+                        maxLines = 1
                     )
                     IconButton(
                         onClick = onDismiss,
@@ -115,10 +119,10 @@ internal fun ExtractedNuevaOperacionDialog(
                         .verticalScroll(rememberScrollState())
                         .padding(20.dp)
                 ) {
-                    Text("UBICACION Y SECTOR", fontSize = 11.sp, fontWeight = FontWeight.Black, color = accentColor)
+                    Text("Ubicacion y sector", fontSize = 11.sp, fontWeight = FontWeight.Black, color = accentColor)
                     Spacer(Modifier.height(12.dp))
 
-                    Text("REGION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
+                    Text("Region", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                     Box {
                         OutlinedButton(
                             onClick = { expandedReg = true },
@@ -128,7 +132,7 @@ internal fun ExtractedNuevaOperacionDialog(
                             colors = ButtonDefaults.outlinedButtonColors(containerColor = comboBg)
                         ) {
                             Text(
-                                selectedRegionId?.let { regionLabelById[it] } ?: "Seleccionar Region",
+                                selectedRegionId?.let { regionLabelById[it] } ?: "Seleccionar region",
                                 color = comboText,
                                 modifier = Modifier.weight(1f),
                                 textAlign = TextAlign.Start
@@ -151,7 +155,7 @@ internal fun ExtractedNuevaOperacionDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Text("SECTOR AMERB", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
+                    Text("Sector AMERB", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                     OutlinedTextField(
                         value = sectorAmerbInput,
                         onValueChange = onSectorAmerbInputChange,
@@ -172,7 +176,7 @@ internal fun ExtractedNuevaOperacionDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Text("CALETA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
+                    Text("Caleta", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                     OutlinedTextField(
                         value = caletaInput,
                         onValueChange = {
@@ -198,12 +202,12 @@ internal fun ExtractedNuevaOperacionDialog(
                     HorizontalDivider(color = comboBorder)
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    Text("IDENTIFICACION", fontSize = 11.sp, fontWeight = FontWeight.Black, color = accentColor)
+                    Text("Identificacion", fontSize = 11.sp, fontWeight = FontWeight.Black, color = accentColor)
                     Spacer(Modifier.height(12.dp))
 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Column(Modifier.weight(1f)) {
-                            Text("N° SEGUIMIENTO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
+                            Text("N° seguimiento", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                             OutlinedTextField(
                                 value = numSeguimiento,
                                 onValueChange = {
@@ -235,7 +239,7 @@ internal fun ExtractedNuevaOperacionDialog(
 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Column(Modifier.weight(1f)) {
-                            Text("FECHA INICIO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
+                            Text("Fecha inicio", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                             OutlinedTextField(
                                 value = fechaInicio,
                                 onValueChange = { },
@@ -266,7 +270,7 @@ internal fun ExtractedNuevaOperacionDialog(
                             )
                         }
                         Column(Modifier.weight(1f)) {
-                            Text("FECHA TERMINO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
+                            Text("Fecha termino", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                             OutlinedTextField(
                                 value = fechaFin,
                                 onValueChange = { },
@@ -300,10 +304,10 @@ internal fun ExtractedNuevaOperacionDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Text("ORGANIZACION (OPA)", fontSize = 11.sp, fontWeight = FontWeight.Black, color = accentColor)
+                    Text("Organizacion (OPA)", fontSize = 11.sp, fontWeight = FontWeight.Black, color = accentColor)
                     Spacer(Modifier.height(12.dp))
 
-                    Text("TIPO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
+                    Text("Tipo", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                     Box {
                         OutlinedButton(
                             onClick = { expandedTipo = true },
@@ -331,7 +335,7 @@ internal fun ExtractedNuevaOperacionDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Text("NOMBRE OPA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
+                    Text("Nombre OPA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                     OutlinedTextField(
                         value = opaInput,
                         onValueChange = onOpaInputChange,
@@ -373,17 +377,17 @@ internal fun ExtractedNuevaOperacionDialog(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(26.dp),
-                        border = BorderStroke(1.5.dp, Color(0.6f, 0.6f, 0.6f))
+                        border = BorderStroke(1.5.dp, colors.outline)
                     ) {
-                        Text("CANCELAR", fontWeight = FontWeight.Bold, color = if (isDark) Color.LightGray else Color.Gray)
+                        Text("Cancelar", fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
                     }
 
                     Button(
                         onClick = onCreateClick,
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(26.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
-                    ) { Text("CREAR", fontWeight = FontWeight.Bold) }
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.tertiary)
+                    ) { Text("Crear", fontWeight = FontWeight.Bold) }
                 }
             }
         }
