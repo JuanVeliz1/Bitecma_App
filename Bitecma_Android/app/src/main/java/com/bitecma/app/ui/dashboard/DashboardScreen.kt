@@ -188,32 +188,6 @@ fun DashboardScreen(
         }
     }
 
-    val speciesNameById by remember {
-        derivedStateOf { DataManager.especies.associate { it.id to it.nombreComun } }
-    }
-
-    val topSpecies by remember {
-        derivedStateOf {
-            val totals = mutableMapOf<Int, Int>()
-            for (op in opsAll) {
-                for (b in op.botes ?: emptyList()) {
-                    for (t in b.transectos ?: emptyList()) {
-                        for ((k, v) in (t.counts ?: emptyMap())) {
-                            val id = k.toIntOrNull() ?: continue
-                            totals[id] = (totals[id] ?: 0) + v
-                        }
-                    }
-                }
-            }
-            val top = totals.entries
-                .sortedByDescending { it.value }
-                .take(5)
-                .map { it.key to it.value }
-            val maxVal = (top.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
-            top to maxVal
-        }
-    }
-
     LaunchedEffect(AppState.forceOffline, AppState.authToken) {
         DataManager.reconcileBackgroundSync(ctx)
     }
@@ -578,168 +552,93 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                // Recent Operations y Gráfico (Replica Foto 3)
+                // Operaciones recientes
                 item {
-                    val top = topSpecies.first
-                    val maxVal = topSpecies.second
-
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                         val isCompact = maxWidth < 700.dp
                         if (isCompact) {
-                            Column {
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = colors.bitecmaCardBackground),
-                                    border = BorderStroke(1.dp, colors.bitecmaBorder),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("OPERACIONES RECIENTES", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaMutedText)
-                                            TextButton(onClick = { navController.navigate(AppRoutes.operaciones(userId)) }) {
-                                                Text("Ver todas", fontSize = 12.sp)
-                                            }
-                                        }
-                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.bitecmaBorder)
-                                        Row(modifier = Modifier.fillMaxWidth()) {
-                                            Text("ID", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                            Text("SECTOR", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                            Text("FECHA", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                            Text("BOTES", modifier = Modifier.weight(0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                        opsAll.take(5).forEach { op ->
-                                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                                                Text(op.id, modifier = Modifier.weight(1.5f), fontSize = 11.sp)
-                                                Text(op.sector, modifier = Modifier.weight(1.5f), fontSize = 11.sp)
-                                                Text(op.fechaInicio ?: "", modifier = Modifier.weight(1.5f), fontSize = 11.sp)
-                                                Text((op.botes?.size ?: 0).toString(), modifier = Modifier.weight(0.8f), fontSize = 11.sp)
-                                            }
-                                        }
-                                        if (opsAll.isEmpty()) {
-                                            Text(
-                                                "Sin operaciones",
-                                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                                textAlign = TextAlign.Center,
-                                                color = colors.bitecmaMutedText
-                                            )
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = colors.bitecmaCardBackground),
+                                border = BorderStroke(1.dp, colors.bitecmaBorder),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("OPERACIONES RECIENTES", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaMutedText)
+                                        TextButton(onClick = { navController.navigate(AppRoutes.operaciones(userId)) }) {
+                                            Text("Ver todas", fontSize = 12.sp)
                                         }
                                     }
-                                }
-
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = colors.bitecmaCardBackground),
-                                    border = BorderStroke(1.dp, colors.bitecmaBorder),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        Text("COMPOSICIÓN POR ESPECIE", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaMutedText)
-                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.bitecmaBorder)
-                                        if (top.isEmpty()) {
-                                            Text("Sin datos", color = colors.bitecmaMutedText, fontSize = 12.sp)
-                                        } else {
-                                            top.forEach { (id, value) ->
-                                                val ratio = value.toFloat() / maxVal.toFloat()
-                                                val name = speciesNameById[id] ?: "ID $id"
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier.padding(vertical = 6.dp)
-                                                ) {
-                                                    Text(name, modifier = Modifier.width(70.dp), fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                                                    LinearProgressIndicator(
-                                                        progress = { ratio },
-                                                        modifier = Modifier.fillMaxWidth().height(12.dp),
-                                                        color = colors.bitecmaTeal,
-                                                        trackColor = colors.bitecmaSoftBackgroundAlt
-                                                    )
-                                                }
-                                            }
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.bitecmaBorder)
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        Text("ID", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("SECTOR", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("FECHA", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("BOTES", modifier = Modifier.weight(0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    opsAll.take(5).forEach { op ->
+                                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                            Text(op.id, modifier = Modifier.weight(1.5f), fontSize = 11.sp)
+                                            Text(op.sector, modifier = Modifier.weight(1.5f), fontSize = 11.sp)
+                                            Text(op.fechaInicio ?: "", modifier = Modifier.weight(1.5f), fontSize = 11.sp)
+                                            Text((op.botes?.size ?: 0).toString(), modifier = Modifier.weight(0.8f), fontSize = 11.sp)
                                         }
+                                    }
+                                    if (opsAll.isEmpty()) {
+                                        Text(
+                                            "Sin operaciones",
+                                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                            textAlign = TextAlign.Center,
+                                            color = colors.bitecmaMutedText
+                                        )
                                     }
                                 }
                             }
                         } else {
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                Card(
-                                    modifier = Modifier.weight(1.5f),
-                                    colors = CardDefaults.cardColors(containerColor = colors.bitecmaCardBackground),
-                                    border = BorderStroke(1.dp, colors.bitecmaBorder),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("OPERACIONES RECIENTES", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaMutedText)
-                                            TextButton(onClick = { navController.navigate(AppRoutes.operaciones(userId)) }) {
-                                                Text("Ver todas", fontSize = 12.sp)
-                                            }
-                                        }
-                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.bitecmaBorder)
-                                        Row(modifier = Modifier.fillMaxWidth()) {
-                                            Text("ID", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                            Text("SECTOR", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                            Text("FECHA", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                            Text("BOTES", modifier = Modifier.weight(0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                        opsAll.take(5).forEach { op ->
-                                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                                                Text(op.id, modifier = Modifier.weight(1.5f), fontSize = 11.sp)
-                                                Text(op.sector, modifier = Modifier.weight(1.5f), fontSize = 11.sp)
-                                                Text(op.fechaInicio ?: "", modifier = Modifier.weight(1.5f), fontSize = 11.sp)
-                                                Text((op.botes?.size ?: 0).toString(), modifier = Modifier.weight(0.8f), fontSize = 11.sp)
-                                            }
-                                        }
-                                        if (opsAll.isEmpty()) {
-                                            Text(
-                                                "Sin operaciones",
-                                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                                textAlign = TextAlign.Center,
-                                                color = colors.bitecmaMutedText
-                                            )
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = colors.bitecmaCardBackground),
+                                border = BorderStroke(1.dp, colors.bitecmaBorder),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("OPERACIONES RECIENTES", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaMutedText)
+                                        TextButton(onClick = { navController.navigate(AppRoutes.operaciones(userId)) }) {
+                                            Text("Ver todas", fontSize = 12.sp)
                                         }
                                     }
-                                }
-
-                                Spacer(modifier = Modifier.width(16.dp))
-
-                                Card(
-                                    modifier = Modifier.weight(1f),
-                                    colors = CardDefaults.cardColors(containerColor = colors.bitecmaCardBackground),
-                                    border = BorderStroke(1.dp, colors.bitecmaBorder),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        Text("COMPOSICIÓN POR ESPECIE", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaMutedText)
-                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.bitecmaBorder)
-                                        if (top.isEmpty()) {
-                                            Text("Sin datos", color = colors.bitecmaMutedText, fontSize = 12.sp)
-                                        } else {
-                                            top.forEach { (id, value) ->
-                                                val ratio = value.toFloat() / maxVal.toFloat()
-                                                val name = speciesNameById[id] ?: "ID $id"
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier.padding(vertical = 6.dp)
-                                                ) {
-                                                    Text(name, modifier = Modifier.width(70.dp), fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                                                    LinearProgressIndicator(
-                                                        progress = { ratio },
-                                                        modifier = Modifier.fillMaxWidth().height(12.dp),
-                                                        color = colors.bitecmaTeal,
-                                                        trackColor = colors.bitecmaSoftBackgroundAlt
-                                                    )
-                                                }
-                                            }
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colors.bitecmaBorder)
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        Text("ID", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("SECTOR", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("FECHA", modifier = Modifier.weight(1.5f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text("BOTES", modifier = Modifier.weight(0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    opsAll.take(5).forEach { op ->
+                                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                            Text(op.id, modifier = Modifier.weight(1.5f), fontSize = 11.sp)
+                                            Text(op.sector, modifier = Modifier.weight(1.5f), fontSize = 11.sp)
+                                            Text(op.fechaInicio ?: "", modifier = Modifier.weight(1.5f), fontSize = 11.sp)
+                                            Text((op.botes?.size ?: 0).toString(), modifier = Modifier.weight(0.8f), fontSize = 11.sp)
                                         }
+                                    }
+                                    if (opsAll.isEmpty()) {
+                                        Text(
+                                            "Sin operaciones",
+                                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                            textAlign = TextAlign.Center,
+                                            color = colors.bitecmaMutedText
+                                        )
                                     }
                                 }
                             }

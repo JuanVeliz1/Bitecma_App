@@ -133,7 +133,7 @@ object AppState {
     }
 
     fun isEffectivelyOnline(): Boolean {
-        return !forceOffline && hasNetwork && isOnline && !authToken.isNullOrBlank()
+        return !forceOffline && hasNetwork && hasAuthenticatedSession() && !authToken.isNullOrBlank()
     }
 
     fun hasAuthenticatedSession(): Boolean {
@@ -169,7 +169,6 @@ object AppState {
     }
 
     fun registerSyncFailure(message: String? = null) {
-        isOnline = false
         lastSyncError = message?.trim()?.takeIf { it.isNotEmpty() }
     }
 }

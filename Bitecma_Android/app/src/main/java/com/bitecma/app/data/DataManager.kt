@@ -375,6 +375,9 @@ object DataManager {
             especiesMaestras = snapshot.especiesMaestras
         )
         val appCtx = context.applicationContext
+        // Schedule background sync immediately so pending operations are not stranded
+        // if the process dies before the debounced persistence job finishes.
+        reconcileBackgroundSync(appCtx)
         persistJob?.cancel()
         persistJob = ioScope.launch {
             delay(250)
@@ -490,9 +493,14 @@ object DataManager {
         }
         val current = estadosSyncOperacion[opId]
         val isOnlyLocal = esOperacionSoloLocal || operacionesBd.none { it.id == opId }
+        val preserveError = current?.estado == EstadoSyncOperacion.ERROR && !current.ultimoError.isNullOrBlank()
         estadosSyncOperacion[opId] = EstadoSyncInfo(
-            estado = if (isOnlyLocal) EstadoSyncOperacion.SOLO_LOCAL else EstadoSyncOperacion.PENDIENTE,
-            ultimoError = null,
+            estado = when {
+                preserveError -> EstadoSyncOperacion.ERROR
+                isOnlyLocal -> EstadoSyncOperacion.SOLO_LOCAL
+                else -> EstadoSyncOperacion.PENDIENTE
+            },
+            ultimoError = if (preserveError) current?.ultimoError else null,
             ultimoIntentoMs = current?.ultimoIntentoMs,
             ultimaSincronizacionMs = current?.ultimaSincronizacionMs,
         )
@@ -600,15 +608,54 @@ object DataManager {
             botes = op.botes
         )
 
+        fun normalizeMutationSavedOperacion(requested: OperacionDto, saved: OperacionDto): OperacionDto {
+            val requestedBotes = requested.botes.orEmpty()
+            if (requestedBotes.isEmpty()) return saved
+            val savedBotes = saved.botes
+            if (savedBotes.isNullOrEmpty()) return saved.copy(botes = requestedBotes)
+
+            val normalizedBotes = savedBotes.map { savedBote ->
+                val requestedBote = requestedBotes.firstOrNull { sameBoatIdentity(it, savedBote) } ?: return@map savedBote
+                savedBote.copy(
+                    zona = savedBote.zona ?: requestedBote.zona,
+                    nombre = savedBote.nombre ?: requestedBote.nombre,
+                    buzo = savedBote.buzo ?: requestedBote.buzo,
+                    densTipo = savedBote.densTipo ?: requestedBote.densTipo,
+                    submareal = savedBote.submareal ?: requestedBote.submareal,
+                    boteMaestroId = savedBote.boteMaestroId ?: requestedBote.boteMaestroId,
+                    lpMuestras = when {
+                        !savedBote.lpMuestras.isNullOrEmpty() -> savedBote.lpMuestras
+                        else -> requestedBote.lpMuestras
+                    },
+                    transectos = when {
+                        !savedBote.transectos.isNullOrEmpty() -> savedBote.transectos
+                        else -> requestedBote.transectos
+                    },
+                )
+            }
+            val additionalRequested = requestedBotes.filterNot { requestedBote ->
+                normalizedBotes.any { savedBote -> sameBoatIdentity(savedBote, requestedBote) }
+            }
+            return saved.copy(botes = normalizedBotes + additionalRequested)
+        }
+
+        fun resolveSavedOperacion(response: Response<ApiEnvelope<OperacionDto>>?): OperacionDto? {
+            if (response == null || !response.isSuccessful) return null
+            val body = response.body()
+            if (body?.ok == false) return null
+            val saved = body?.data ?: op
+            return normalizeMutationSavedOperacion(op, saved)
+        }
+
         val updated = runCatching {
             val res = RetrofitClient.apiService.actualizarOperacion(op.id, req)
-            if (res.isSuccessful && res.body()?.ok == true) res.body()?.data else null
+            resolveSavedOperacion(res)
         }.getOrNull()
         if (updated != null) return updated
 
         return runCatching {
             val res = RetrofitClient.apiService.crearOperacion(req)
-            if (res.isSuccessful && res.body()?.ok == true) res.body()?.data else null
+            resolveSavedOperacion(res)
         }.getOrNull()
     }
 
@@ -654,29 +701,26 @@ object DataManager {
         localBotes: List<OperacionBoteDto>,
         remoteBotes: List<OperacionBoteDto>,
     ): List<OperacionBoteDto> {
-        if (localBotes.isEmpty()) return remoteBotes
-        if (remoteBotes.isEmpty()) return localBotes
+    if (remoteBotes.isEmpty()) return emptyList()
+    if (localBotes.isEmpty()) return remoteBotes
 
-        val merged = localBotes.toMutableList()
-        remoteBotes.forEach { remote ->
-            val idx = merged.indexOfFirst { sameBoatIdentity(it, remote) }
-            if (idx >= 0) {
-                val local = merged[idx]
-                merged[idx] = remote.copy(
-                    zona = remote.zona ?: local.zona,
-                    nombre = remote.nombre ?: local.nombre,
-                    buzo = remote.buzo ?: local.buzo,
-                    densTipo = remote.densTipo ?: local.densTipo,
-                    submareal = remote.submareal ?: local.submareal,
-                    boteMaestroId = remote.boteMaestroId ?: local.boteMaestroId,
-                    lpMuestras = if (!remote.lpMuestras.isNullOrEmpty()) remote.lpMuestras else local.lpMuestras,
-                    transectos = if (!remote.transectos.isNullOrEmpty()) remote.transectos else local.transectos,
-                )
-            } else {
-                merged.add(remote)
-            }
+    return remoteBotes.map { remote ->
+        val local = localBotes.firstOrNull { sameBoatIdentity(it, remote) }
+        if (local == null) {
+            remote
+        } else {
+            remote.copy(
+                zona = remote.zona ?: local.zona,
+                nombre = remote.nombre ?: local.nombre,
+                buzo = remote.buzo ?: local.buzo,
+                densTipo = remote.densTipo ?: local.densTipo,
+                submareal = remote.submareal ?: local.submareal,
+                boteMaestroId = remote.boteMaestroId ?: local.boteMaestroId,
+                lpMuestras = remote.lpMuestras ?: local.lpMuestras,
+                transectos = remote.transectos ?: local.transectos,
+            )
         }
-        return merged
+        }
     }
 
     private fun mergeOperacionPreservingData(local: OperacionDto, remote: OperacionDto): OperacionDto {
@@ -690,7 +734,7 @@ object DataManager {
             numSeg = remote.numSeg ?: local.numSeg,
             fechaInicio = remote.fechaInicio ?: local.fechaInicio,
             fechaFin = remote.fechaFin ?: local.fechaFin,
-            botes = mergeBotesPreservingData(local.botes.orEmpty(), remote.botes.orEmpty())
+        botes = remote.botes?.let { mergeBotesPreservingData(local.botes.orEmpty(), it) } ?: local.botes
         )
     }
 
@@ -738,6 +782,7 @@ object DataManager {
     private fun mergeServerOperations(serverOps: List<OperacionDto>) {
         deduplicateOperationSources()
         val dirtySet = dirtyOperacionIds.toSet()
+    val currentBdOrder = operacionesBd.map { it.id }
         val localById = (operacionesBd + operacionesLc)
             .groupBy { it.id }
             .mapValues { (_, ops) -> ops.reduce { acc, op -> mergeOperationSnapshots(acc, op) } }
@@ -751,6 +796,11 @@ object DataManager {
                 else -> op
             }
         })
+    operacionesBd.addAll(
+        currentBdOrder.mapNotNull { id ->
+            localById[id]?.takeIf { id !in serverIds }
+        }
+    )
         operacionesLc.removeAll { it.id in serverIds }
         normalizeSyncStates()
     }
@@ -900,8 +950,17 @@ object DataManager {
     }
 
     suspend fun createOperacion(context: Context, req: OperacionUpsertRequest): OperacionDto {
+        val local = buildLocalOperacion(req)
         if (AppState.isEffectivelyOnline()) {
-            val saved = extractEnvelopeData(runCatching { RetrofitClient.apiService.crearOperacion(req) }.getOrNull())
+            val saved = runCatching {
+                val response = RetrofitClient.apiService.crearOperacion(req)
+                if (!response.isSuccessful) {
+                    null
+                } else {
+                    val body = response.body()
+                    if (body?.ok == false) null else body?.data ?: local
+                }
+            }.getOrNull()
             if (saved != null) {
                 applySavedOperacion(saved)
                 persistCache(context)
@@ -909,7 +968,6 @@ object DataManager {
             }
         }
 
-        val local = buildLocalOperacion(req)
         upsertOperacionInMemory(local)
         markOperacionDirty(local.id, esOperacionSoloLocal = true)
         persistCache(context)
