@@ -21,9 +21,8 @@ Sistema completo (Android + Web) para la gestión de **muestreos intermareales y
 - ✅ Caché local + sincronización offline-first
 - ✅ Botón para subir operaciones locales a la nube
 - ✅ Botón de **sincronización completa** (catálogos + operaciones)
-- ✅ Switch exclusivo admin (`bitecma@bitecma.cl`) para forzar modo offline/online
+- ✅ Switch exclusivo admin (`bitecma@gmail.cl`) para forzar modo offline/online
 - ✅ Iconografía reactiva según estado (modo offline/online/Intermareal/Submareal)
-- ✅ Exportación de reportes a `.csv`
 - ✅ Mejora de rendimiento: caché persistido en background (evita ANR)
 
 ### Web
