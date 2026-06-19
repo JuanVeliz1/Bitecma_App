@@ -46,14 +46,12 @@ object AppState {
         currentUserName = sp.getString(KEY_NAME, null)
         currentUserRole = sp.getString(KEY_ROLE, null)
         hasVerifiedSession = sp.getBoolean(KEY_VERIFIED_SESSION, false)
-        isGuestMode = sp.getBoolean(KEY_GUEST_MODE, false)
-        forceOffline = sp.getBoolean(KEY_FORCE_OFFLINE, false)
+        isGuestMode = false
+        forceOffline = false
         if (!hasAuthenticatedSession()) {
             hasVerifiedSession = false
             forceOffline = false
             authToken = null
-        }
-        if (!hasAuthenticatedSession() && !isGuestMode) {
             currentUserId = null
             currentUserEmail = null
             currentUserName = null
@@ -78,7 +76,8 @@ object AppState {
         if (role.isNullOrBlank()) ed.remove(KEY_ROLE) else ed.putString(KEY_ROLE, role)
         if (hasAuthenticatedSession()) {
             ed.putBoolean(KEY_VERIFIED_SESSION, true)
-            ed.putBoolean(KEY_FORCE_OFFLINE, forceOffline)
+            forceOffline = false
+            ed.putBoolean(KEY_FORCE_OFFLINE, false)
             ed.remove(KEY_GUEST_MODE)
             isGuestMode = false
         } else if (isGuestMode) {
@@ -141,7 +140,7 @@ object AppState {
     }
 
     fun hasAppAccess(): Boolean {
-        return hasAuthenticatedSession() || isGuestMode
+        return hasAuthenticatedSession()
     }
 
     fun dashboardUserId(): Int = currentUserId ?: 0

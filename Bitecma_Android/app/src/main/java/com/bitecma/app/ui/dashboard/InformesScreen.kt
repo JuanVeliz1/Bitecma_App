@@ -34,7 +34,6 @@ import com.bitecma.app.data.AppState
 import com.bitecma.app.network.FileMetaDto
 import com.bitecma.app.utils.ExcelExporter
 import com.bitecma.app.network.OperacionDto
-import com.bitecma.app.network.RetrofitClient
 import com.bitecma.app.network.UploadTextFileRequest
 import com.bitecma.app.sync.SyncScheduler
 import com.bitecma.app.ui.bitecmaAmberBg
@@ -163,26 +162,10 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
                 val text = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
 
                 val req = UploadTextFileRequest(name = name, opId = selectedOpId, text = text)
-
-                val canUpload = !AppState.forceOffline && !AppState.authToken.isNullOrBlank()
-                val uploaded = if (canUpload) {
-                    val up = RetrofitClient.apiService.uploadTextFile(req)
-                    if (up.isSuccessful && up.body()?.ok == true) {
-                        val refreshed = RetrofitClient.apiService.getFiles(selectedOpId)
-                        if (refreshed.isSuccessful && refreshed.body()?.ok == true) {
-                            files = refreshed.body()?.data ?: emptyList()
-                        }
-                        true
-                    } else {
-                        false
-                    }
+                val uploadResult = DataManager.uploadTextFileOrQueue(ctx, req)
+                if (uploadResult.uploaded) {
+                    files = uploadResult.files
                 } else {
-                    false
-                }
-
-                if (!uploaded) {
-                    DataManager.enqueueTextFile(req)
-                    DataManager.persistCache(ctx)
                     error = "Guardado local. Se subirá cuando vuelvas a estar online."
                 }
             } catch (_: Exception) {
@@ -190,8 +173,7 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
                 val name = "archivo.txt"
                 val text = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
                 val req = UploadTextFileRequest(name = name, opId = selectedOpId, text = text)
-                DataManager.enqueueTextFile(req)
-                DataManager.persistCache(ctx)
+                DataManager.uploadTextFileOrQueue(ctx, req)
             } finally {
                 isLoading = false
             }
@@ -206,15 +188,7 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
             return@LaunchedEffect
         }
         try {
-            val res = RetrofitClient.apiService.getFiles(selectedOpId)
-            if (res.isSuccessful) {
-                val body = res.body()
-                files = if (body?.ok == true) body.data ?: emptyList() else emptyList()
-                if (body?.ok != true && body?.error != null) error = body.error
-            } else {
-                error = "Error del servidor (${res.code()})"
-                files = emptyList()
-            }
+            files = DataManager.getRemoteFiles(selectedOpId)
         } catch (_: Exception) {
             error = "Sin conexión"
             files = emptyList()
@@ -510,23 +484,18 @@ fun DocumentosScreen(navController: NavController, userId: Int) {
                                         isLoading = true
                                         error = null
                                         try {
-                                            val res = RetrofitClient.apiService.getFile(f.id)
-                                            if (!res.isSuccessful) {
-                                                error = "Error del servidor (${res.code()})"
+                                            val fileContent = DataManager.downloadRemoteFile(f.id)
+                                            if (fileContent == null) {
+                                                error = "No se pudo descargar"
                                                 return@launch
                                             }
-                                            val body = res.body()
-                                            if (body?.ok == true && body.data != null) {
-                                                pendingSaveName = body.data.name
-                                                pendingSaveText = body.data.text
-                                                val doSave = { saveLauncher.launch(body.data.name) }
-                                                if (Build.VERSION.SDK_INT <= 28) {
-                                                    runWithPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) { doSave() }
-                                                } else {
-                                                    doSave()
-                                                }
+                                            pendingSaveName = fileContent.name
+                                            pendingSaveText = fileContent.text
+                                            val doSave = { saveLauncher.launch(fileContent.name) }
+                                            if (Build.VERSION.SDK_INT <= 28) {
+                                                runWithPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) { doSave() }
                                             } else {
-                                                error = body?.error ?: "No se pudo descargar"
+                                                doSave()
                                             }
                                         } catch (_: Exception) {
                                             error = "Sin conexión"

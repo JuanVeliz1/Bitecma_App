@@ -29,12 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.bitecma.app.data.Opa
-import com.bitecma.app.data.SectorAmerb
-import com.bitecma.app.network.CaletaDto
-import com.bitecma.app.network.OpaDto
 import com.bitecma.app.network.RegionDto
-import com.bitecma.app.network.SectorAmerbDto
 
 private val EXTRACTED_TIPOS_ORGANIZACION_DEFAULT = listOf("STI", "ASOC", "OTRO")
 
@@ -46,27 +41,21 @@ internal fun ExtractedNuevaOperacionDialog(
     regionLabelById: Map<Int, String>,
     selectedRegionId: Int?,
     onRegionSelected: (Int?) -> Unit,
-    sectoresAmerbApi: List<SectorAmerbDto>,
     sectorAmerbInput: String,
     onSectorAmerbInputChange: (String) -> Unit,
-    selectedSectorAmerb: SectorAmerb?,
-    onSectorAmerbSelected: (SectorAmerb?) -> Unit,
     numSeguimiento: String,
     onNumSeguimientoChange: (String) -> Unit,
     fechaInicio: String,
     onFechaInicioClick: () -> Unit,
     fechaFin: String,
     onFechaFinClick: () -> Unit,
-    caletasApi: List<CaletaDto>,
     caletaInput: String,
     onCaletaInputChange: (String) -> Unit,
     onCaletaSelected: (String) -> Unit,
     tipoOrg: String,
     onTipoOrgChange: (String) -> Unit,
-    opasApi: List<OpaDto>,
     opaInput: String,
     onOpaInputChange: (String) -> Unit,
-    onOpaSelected: (Opa?) -> Unit,
     validationError: String?,
     onCreateClick: () -> Unit,
 ) {
@@ -93,37 +82,6 @@ internal fun ExtractedNuevaOperacionDialog(
             val accentColor = if (isDark) Color(0xFF64B5F6) else Color(0xFF003366)
             var expandedReg by remember { mutableStateOf(false) }
             var expandedTipo by remember { mutableStateOf(false) }
-
-            val filteredSectores = sectoresAmerbApi.filter { it.region == selectedRegionId }
-            val filteredCaletas = remember(caletasApi, selectedRegionId) {
-                if (caletasApi.isEmpty()) {
-                    emptyList()
-                } else {
-                    val allCaletas = caletasApi
-                        .filter { it.nombre.isNotBlank() }
-                        .distinctBy { it.nombre.trim().lowercase() }
-                        .sortedBy { it.nombre.trim().lowercase() }
-
-                    val byRegion = if (selectedRegionId != null) {
-                        allCaletas.filter { caleta -> caleta.region == selectedRegionId }
-                    } else {
-                        allCaletas
-                    }
-
-                    when {
-                        byRegion.isNotEmpty() -> byRegion
-                        else -> allCaletas
-                    }
-                }
-            }
-            val filteredOpas = opasApi.filter { it.region == selectedRegionId }
-            val hasMasterCatalogs = regiones.isNotEmpty() &&
-                sectoresAmerbApi.isNotEmpty() &&
-                caletasApi.isNotEmpty() &&
-                opasApi.isNotEmpty()
-            val selectedSectorLabel = selectedSectorAmerb?.nombre?.takeIf { it.isNotBlank() } ?: sectorAmerbInput.trim()
-            val selectedCaletaLabel = caletaInput.trim()
-            val selectedOpaLabel = opaInput.trim()
 
             Column(modifier = Modifier.fillMaxSize()) {
                 Box(
@@ -160,23 +118,6 @@ internal fun ExtractedNuevaOperacionDialog(
                     Text("UBICACION Y SECTOR", fontSize = 11.sp, fontWeight = FontWeight.Black, color = accentColor)
                     Spacer(Modifier.height(12.dp))
 
-                    if (!hasMasterCatalogs) {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = Color(0xFFFFF3E0),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color(0xFFFFCC80))
-                        ) {
-                            Text(
-                                text = "Los datos maestros aun no estan completos en el dispositivo. Sincroniza primero para trabajar con regiones, sectores, caletas y organizaciones desde Room.",
-                                modifier = Modifier.padding(12.dp),
-                                fontSize = 12.sp,
-                                color = Color(0xFF8A4B00)
-                            )
-                        }
-                        Spacer(Modifier.height(12.dp))
-                    }
-
                     Text("REGION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
                     Box {
                         OutlinedButton(
@@ -211,51 +152,47 @@ internal fun ExtractedNuevaOperacionDialog(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text("SECTOR AMERB", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
-                    SearchableDropdown(
+                    OutlinedTextField(
                         value = sectorAmerbInput,
                         onValueChange = onSectorAmerbInputChange,
-                        placeholder = if (filteredSectores.isEmpty()) "Sin sectores en esta region" else "Buscar sector...",
-                        items = filteredSectores,
-                        itemLabel = { it.nombre },
-                        onItemSelected = { onSectorAmerbSelected(SectorAmerb(it.id, it.nombre, it.region ?: 0)) },
-                        showAddNew = true,
-                        onAddNewValue = {
-                            onSectorAmerbInputChange(it)
-                            onSectorAmerbSelected(null)
-                        }
-                    )
-
-                    if (selectedSectorLabel.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Sector seleccionado: $selectedSectorLabel",
-                            fontSize = 11.sp,
-                            color = accentColor
+                        placeholder = { Text("Ingresar sector AMERB...", color = labelColor) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        textStyle = TextStyle(color = comboText, fontSize = 14.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = comboBorder,
+                            focusedBorderColor = accentColor,
+                            unfocusedTextColor = comboText,
+                            focusedTextColor = comboText,
+                            unfocusedContainerColor = comboBg,
+                            focusedContainerColor = comboBg
                         )
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text("CALETA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
-                    SearchableDropdown(
+                    OutlinedTextField(
                         value = caletaInput,
-                        onValueChange = onCaletaInputChange,
-                        placeholder = if (filteredCaletas.isEmpty()) "Sin caletas disponibles" else "Buscar caleta...",
-                        items = filteredCaletas,
-                        itemLabel = { it.nombre },
-                        onItemSelected = { onCaletaSelected(it.nombre) },
-                        showAddNew = true,
-                        onAddNewValue = { onCaletaSelected(it) }
-                    )
-
-                    if (selectedCaletaLabel.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Caleta seleccionada: $selectedCaletaLabel",
-                            fontSize = 11.sp,
-                            color = accentColor
+                        onValueChange = {
+                            onCaletaInputChange(it)
+                            onCaletaSelected(it)
+                        },
+                        placeholder = { Text("Ingresar caleta...", color = labelColor) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        textStyle = TextStyle(color = comboText, fontSize = 14.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = comboBorder,
+                            focusedBorderColor = accentColor,
+                            unfocusedTextColor = comboText,
+                            focusedTextColor = comboText,
+                            unfocusedContainerColor = comboBg,
+                            focusedContainerColor = comboBg
                         )
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(24.dp))
                     HorizontalDivider(color = comboBorder)
@@ -395,28 +332,23 @@ internal fun ExtractedNuevaOperacionDialog(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text("NOMBRE OPA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = labelColor)
-                    SearchableDropdown(
+                    OutlinedTextField(
                         value = opaInput,
                         onValueChange = onOpaInputChange,
-                        placeholder = if (filteredOpas.isEmpty()) "Sin OPAs en esta region" else "Buscar OPA...",
-                        items = filteredOpas,
-                        itemLabel = { it.nombre },
-                        onItemSelected = { onOpaSelected(Opa(it.id, it.nombre, it.nombre, it.region ?: 0)) },
-                        showAddNew = true,
-                        onAddNewValue = {
-                            onOpaInputChange(it)
-                            onOpaSelected(null)
-                        }
-                    )
-
-                    if (selectedOpaLabel.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Organizacion seleccionada: $selectedOpaLabel",
-                            fontSize = 11.sp,
-                            color = accentColor
+                        placeholder = { Text("Ingresar organizacion...", color = labelColor) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        textStyle = TextStyle(color = comboText, fontSize = 14.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = comboBorder,
+                            focusedBorderColor = accentColor,
+                            unfocusedTextColor = comboText,
+                            focusedTextColor = comboText,
+                            unfocusedContainerColor = comboBg,
+                            focusedContainerColor = comboBg
                         )
-                    }
+                    )
 
                     if (validationError != null) {
                         Spacer(Modifier.height(16.dp))

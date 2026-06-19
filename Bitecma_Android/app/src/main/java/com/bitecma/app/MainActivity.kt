@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -16,10 +17,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.compose.runtime.*
 import com.bitecma.app.ui.login.LoginScreen
 import com.bitecma.app.ui.dashboard.DashboardScreen
-import com.bitecma.app.ui.admin.AdminScreen
 import com.bitecma.app.ui.login.ForgotPasswordScreen
 import com.bitecma.app.ui.dashboard.OperacionesScreen
-import com.bitecma.app.ui.dashboard.BotesScreen
 import com.bitecma.app.ui.dashboard.EspeciesScreen
 import com.bitecma.app.data.AppState
 import com.bitecma.app.data.DataManager
@@ -28,6 +27,11 @@ import com.bitecma.app.ui.BitecmaTheme
 import com.bitecma.app.utils.NetworkMonitor
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val PREFS_UI = "bitecma_ui"
+        private const val KEY_DARK_MODE = "dark_mode"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppState.loadSession(this)
@@ -37,12 +41,27 @@ class MainActivity : ComponentActivity() {
             AppRoutes.LOGIN
         }
         setContent {
-            var isDarkMode by remember { mutableStateOf(false) }
+            val darkModeInicial = remember {
+                getSharedPreferences(PREFS_UI, MODE_PRIVATE).getBoolean(KEY_DARK_MODE, false)
+            }
+            var isDarkMode by remember { mutableStateOf(darkModeInicial) }
             var cacheReady by remember { mutableStateOf(false) }
             val ctx = this@MainActivity
+            val darkModeSistema = isSystemInDarkTheme()
+
+            LaunchedEffect(darkModeSistema) {
+                val prefs = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+                if (!prefs.contains(KEY_DARK_MODE)) {
+                    isDarkMode = darkModeSistema
+                }
+            }
 
             LaunchedEffect(Unit) {
-                DataManager.loadCache(ctx)
+                if (AppState.hasAuthenticatedSession()) {
+                    DataManager.loadCache(ctx)
+                } else {
+                    DataManager.clearLocalSessionData(ctx)
+                }
                 cacheReady = true
             }
 
@@ -86,7 +105,18 @@ class MainActivity : ComponentActivity() {
                         }
                         composable(AppRoutes.DASHBOARD_PATTERN) { backStackEntry ->
                             val userId = backStackEntry.arguments?.getString("userId")?.toIntOrNull() ?: 0
-                            DashboardScreen(navController, userId, isDarkMode, onDarkModeChange = { isDarkMode = it })
+                            DashboardScreen(
+                                navController,
+                                userId,
+                                isDarkMode,
+                                onDarkModeChange = { darkModeActivo ->
+                                    isDarkMode = darkModeActivo
+                                    getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+                                        .edit()
+                                        .putBoolean(KEY_DARK_MODE, darkModeActivo)
+                                        .apply()
+                                },
+                            )
                         }
                         composable(AppRoutes.OPERACIONES_PATTERN) { backStackEntry ->
                             val userId = backStackEntry.arguments?.getString("userId")?.toIntOrNull() ?: 0
@@ -95,14 +125,6 @@ class MainActivity : ComponentActivity() {
                         composable(AppRoutes.ESPECIES_PATTERN) { backStackEntry ->
                             val userId = backStackEntry.arguments?.getString("userId")?.toIntOrNull() ?: 0
                             EspeciesScreen(navController, userId)
-                        }
-                        composable(AppRoutes.BOTES_PATTERN) { backStackEntry ->
-                            val userId = backStackEntry.arguments?.getString("userId")?.toIntOrNull() ?: 0
-                            BotesScreen(navController, userId)
-                        }
-                        composable(AppRoutes.ADMIN_PATTERN) { backStackEntry ->
-                            val userId = backStackEntry.arguments?.getString("userId")?.toIntOrNull() ?: 0
-                            AdminScreen(navController, userId)
                         }
                     }
                 }

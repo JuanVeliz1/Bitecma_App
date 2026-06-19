@@ -1,11 +1,11 @@
 package com.bitecma.app.ui.login
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -24,9 +24,6 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.compose.ui.platform.LocalContext
 import com.bitecma.app.AppRoutes
-import com.bitecma.app.network.RetrofitClient
-import com.bitecma.app.network.AuthLoginRequest
-import com.bitecma.app.sync.SyncScheduler
 import kotlinx.coroutines.launch
 import com.bitecma.app.data.AppState
 import com.bitecma.app.data.DataManager
@@ -60,6 +57,7 @@ fun LoginScreen(navController: NavController) {
     
     val trimmedEmail = email.trim()
     val colors = MaterialTheme.colorScheme
+    val isDark = isSystemInDarkTheme()
     val lastLoginText = remember(trimmedEmail) {
         if (trimmedEmail.isEmpty()) null else AppState.getLastLoginText(ctx, trimmedEmail)
     }
@@ -71,9 +69,9 @@ fun LoginScreen(navController: NavController) {
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFFD8F3FF),
-                        Color(0xFFBFE6FF),
-                        colors.bitecmaTeal,
+                        if (isDark) Color(0xFF07101B) else Color(0xFFD8F3FF),
+                        if (isDark) Color(0xFF10233C) else Color(0xFFBFE6FF),
+                        if (isDark) Color(0xFF0A5F67) else colors.bitecmaTeal,
                     ),
                 ),
             )
@@ -216,49 +214,15 @@ fun LoginScreen(navController: NavController) {
                             scope.launch {
                                 isLoading = true
                                 errorMessage = ""
-                                try {
-                                    val response = RetrofitClient.apiService.login(AuthLoginRequest(correo = e, password = p))
-
-                                    if (response.isSuccessful && response.body() != null) {
-                                        val body = response.body()!!
-                                        if (body.ok == true && !body.token.isNullOrBlank()) {
-                                            AppState.isOnline = true
-                                            AppState.authToken = body.token
-                                            AppState.currentUserEmail = e
-                                            AppState.forceOffline = false
-                                            AppState.hasVerifiedSession = true
-                                            val userApi = body.user
-                                            AppState.currentUserId = userApi?.uid ?: userApi?.id
-                                            AppState.currentUserName = userApi?.nombre
-                                            AppState.currentUserRole = userApi?.rol
-                                            AppState.persistSession(ctx)
-                                            AppState.hasNetwork = true
-                                            AppState.saveLastLoginNow(ctx, e)
-                                            successMessage = "Bienvenido ${userApi?.nombre ?: ""} (Online)"
-                                            DataManager.reconcileBackgroundSync(ctx)
-                                            SyncScheduler.scheduleImmediate(ctx)
-                                            runCatching { DataManager.syncAllFromServer(ctx) }
-                                            navController.navigate(AppRoutes.dashboard(AppState.dashboardUserId())) {
-                                                popUpTo(AppRoutes.LOGIN) { inclusive = true }
-                                            }
-                                            return@launch
-                                        } else {
-                                            errorMessage = body.error ?: "Correo o contraseña incorrectos"
-                                            isLoading = false
-                                            return@launch
-                                        }
-                                    } else {
-                                        val code = response.code()
-                                        if (code == 401 || code == 403) {
-                                            errorMessage = "Correo o contraseña incorrectos"
-                                            isLoading = false
-                                            return@launch
-                                        }
-                                        errorMessage = "No se pudo conectar con el servidor ($code)"
+                                val result = DataManager.loginUsuario(ctx, e, p)
+                                if (result.success) {
+                                    successMessage = result.successMessage ?: ""
+                                    navController.navigate(AppRoutes.dashboard(AppState.dashboardUserId())) {
+                                        popUpTo(AppRoutes.LOGIN) { inclusive = true }
                                     }
-                                } catch (ex: Exception) {
-                                    errorMessage = "Necesitas internet para iniciar sesión con tu cuenta registrada"
+                                    return@launch
                                 }
+                                errorMessage = result.errorMessage ?: "No se pudo iniciar sesión"
                                 isLoading = false
                             }
                         },
@@ -273,31 +237,10 @@ fun LoginScreen(navController: NavController) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedButton(
-                        onClick = {
-                            AppState.enterGuestMode(ctx)
-                            successMessage = "Entraste sin cuenta. Todo quedará local hasta que conectes una cuenta."
-                            navController.navigate(AppRoutes.dashboard(AppState.dashboardUserId())) {
-                                popUpTo(AppRoutes.LOGIN) { inclusive = true }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading,
-                        border = BorderStroke(1.5.dp, colors.bitecmaBorder),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = colors.bitecmaCardBackground,
-                            contentColor = colors.bitecmaSubtleText,
-                        )
-                    ) {
-                        Text("Usar sin cuenta")
-                    }
-                    
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "Sin cuenta puedes trabajar localmente. Para sincronizar con la base de datos deberás iniciar sesión más tarde.",
+                        text = "El primer ingreso requiere internet. Despues podrás usar la app offline con la cuenta ya validada en este dispositivo.",
                         fontSize = 11.sp,
                         color = colors.bitecmaMutedText
                     )

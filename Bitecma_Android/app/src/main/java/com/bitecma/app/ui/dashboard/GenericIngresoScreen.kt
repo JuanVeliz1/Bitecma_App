@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.bitecma.app.data.AppState
-import com.bitecma.app.network.RetrofitClient
+import com.bitecma.app.data.DataManager
 import com.bitecma.app.ui.bitecmaAmberBg
 import com.bitecma.app.ui.bitecmaBorder
 import com.bitecma.app.ui.bitecmaCardBackground
@@ -199,14 +199,13 @@ fun GenericIngresoScreen(navController: NavController, title: String, endpoint: 
                                     mensaje = "Conecta una cuenta para enviar datos al servidor"
                                     return@launch
                                 }
-                                val response = RetrofitClient.apiService.ping()
-                                if (response.isSuccessful && response.body()?.ok == true) {
+                                if (DataManager.pingServidor()) {
                                     mensaje = "Datos registrados con éxito"
                                     campo1 = ""
                                     campo2 = ""
                                     campo1FocusRequester.requestFocus()
                                 } else {
-                                    mensaje = "Error del servidor: ${response.code()}"
+                                    mensaje = "Error del servidor o sesión no disponible"
                                 }
                             } catch (e: Exception) {
                                 mensaje = "Error de conexión: Revisa tu internet o la URL de la API"

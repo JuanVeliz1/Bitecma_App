@@ -84,12 +84,8 @@ private fun extractedCountInputText(count: Int?): String {
     return if (safeCount == 0) "" else safeCount.toString()
 }
 
-private data class ExtractedTransectosLpIngresoTarget(
-    val speciesId: Int,
-    val sampleKind: String,
-)
-
 @Composable
+@Suppress("UNUSED_PARAMETER")
 internal fun ExtractedTransectosDialog(
     show: Boolean,
     currentBote: OperacionBoteDto?,
@@ -103,6 +99,7 @@ internal fun ExtractedTransectosDialog(
     onRemoveLpSpecies: (Int) -> Unit,
 ) {
     if (!show) return
+    val colors = MaterialTheme.colorScheme
 
     val densityUnitTitle = extractedDensTipoPluralLabel(currentBote?.densTipo).uppercase()
 
@@ -122,7 +119,6 @@ internal fun ExtractedTransectosDialog(
             var subTab by remember(show, currentBote?.id, currentBote?.zona, currentBote?.nombre) {
                 mutableStateOf("DENSIDAD")
             }
-            var lpIngresoTarget by remember { mutableStateOf<ExtractedTransectosLpIngresoTarget?>(null) }
             var pendingAreaFocusIndex by remember { mutableStateOf(if (transectosList.isNotEmpty()) 0 else null) }
             var pendingQuadrantCountFocusIndex by remember { mutableStateOf<Int?>(null) }
             var pendingSpeciesFocusIndex by remember { mutableStateOf<Int?>(null) }
@@ -300,13 +296,13 @@ internal fun ExtractedTransectosDialog(
 
                             Surface(
                                 modifier = Modifier.weight(1f),
-                                color = Color.White,
+                                color = colors.surface,
                                 shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, Color(0xFFF1F3F5))
+                                border = BorderStroke(1.dp, colors.outline.copy(alpha = 0.45f))
                             ) {
                                 if (quadrants.isEmpty()) {
                                     Box(Modifier.fillMaxSize().padding(18.dp), contentAlignment = Alignment.Center) {
-                                        Text("Aun no hay cuadrantes registrados.", color = Color.Gray)
+                                        Text("Aun no hay cuadrantes registrados.", color = colors.onSurfaceVariant)
                                     }
                                 } else {
                                     LaunchedEffect(pendingQuadrantCountFocusIndex) {
@@ -328,8 +324,8 @@ internal fun ExtractedTransectosDialog(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .padding(horizontal = 12.dp, vertical = 8.dp),
-                                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                                border = BorderStroke(1.dp, Color(0xFFE8EAED)),
+                                                colors = CardDefaults.cardColors(containerColor = colors.surface),
+                                                border = BorderStroke(1.dp, colors.outline.copy(alpha = 0.45f)),
                                                 shape = RoundedCornerShape(14.dp)
                                             ) {
                                                 LaunchedEffect(pendingQuadrantCountFocusIndex, qIndex) {
@@ -340,8 +336,8 @@ internal fun ExtractedTransectosDialog(
                                                 }
                                                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Text("Cuadrante ${q.num ?: 0}", fontWeight = FontWeight.Black, color = Color(0xFF003366), modifier = Modifier.weight(1f))
-                                                        Text(speciesName, fontSize = 12.sp, color = Color(0xFF00897B), fontWeight = FontWeight.Bold)
+                                                        Text("Cuadrante ${q.num ?: 0}", fontWeight = FontWeight.Black, color = colors.onSurface, modifier = Modifier.weight(1f))
+                                                        Text(speciesName, fontSize = 12.sp, color = colors.secondary, fontWeight = FontWeight.Bold)
                                                         Spacer(Modifier.width(8.dp))
                                                         IconButton(
                                                             onClick = {
@@ -350,12 +346,12 @@ internal fun ExtractedTransectosDialog(
                                                             },
                                                             modifier = Modifier.size(28.dp)
                                                         ) {
-                                                            Icon(Icons.Default.Delete, null, tint = Color.LightGray, modifier = Modifier.size(18.dp))
+                                                            Icon(Icons.Default.Delete, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
                                                         }
                                                     }
                                                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            Text("CANTIDAD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                                            Text("CANTIDAD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
                                                             BasicTextField(
                                                                 value = extractedCountInputText(countValue),
                                                                 onValueChange = { value ->
@@ -370,10 +366,10 @@ internal fun ExtractedTransectosDialog(
                                                                     .fillMaxWidth()
                                                                     .focusRequester(countFocusRequester)
                                                                     .padding(top = 6.dp)
-                                                                    .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(10.dp))
-                                                                    .background(Color.White, RoundedCornerShape(10.dp))
+                                                                    .border(1.5.dp, colors.outline.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                                                    .background(colors.surface, RoundedCornerShape(10.dp))
                                                                     .padding(10.dp),
-                                                                textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Black, color = Color(0xFF00897B)),
+                                                                textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Black, color = colors.secondary),
                                                                 singleLine = true,
                                                                 keyboardOptions = KeyboardOptions(
                                                                     keyboardType = KeyboardType.Number,
@@ -393,21 +389,21 @@ internal fun ExtractedTransectosDialog(
                                                             )
                                                         }
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            Text("DENSIDAD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                                            Text("DENSIDAD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
                                                             Surface(
                                                                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                                                                color = Color(0xFFF1F3F5),
+                                                                color = colors.surfaceVariant,
                                                                 shape = RoundedCornerShape(10.dp)
                                                             ) {
                                                                 Box(Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                                                                    Text(extractedDensityValueText(countValue, q.area), fontWeight = FontWeight.Black, color = Color.DarkGray)
+                                                                    Text(extractedDensityValueText(countValue, q.area), fontWeight = FontWeight.Black, color = colors.onSurface)
                                                                 }
                                                             }
                                                         }
                                                     }
                                                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            Text("AREA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                                            Text("AREA", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
                                                             BasicTextField(
                                                                 value = (q.area ?: 0.25).toString(),
                                                                 onValueChange = { value ->
@@ -417,16 +413,16 @@ internal fun ExtractedTransectosDialog(
                                                                 modifier = Modifier
                                                                     .fillMaxWidth()
                                                                     .padding(top = 6.dp)
-                                                                    .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(10.dp))
-                                                                    .background(Color.White, RoundedCornerShape(10.dp))
+                                                                    .border(1.5.dp, colors.outline.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                                                    .background(colors.surface, RoundedCornerShape(10.dp))
                                                                     .padding(10.dp),
-                                                                textStyle = TextStyle(fontSize = 13.sp),
+                                                                textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
                                                                 singleLine = true,
                                                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                                                             )
                                                         }
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            Text("SUSTRATO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                                            Text("SUSTRATO", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
                                                             BasicTextField(
                                                                 value = q.sustrato.orEmpty(),
                                                                 onValueChange = { value ->
@@ -436,10 +432,10 @@ internal fun ExtractedTransectosDialog(
                                                                 modifier = Modifier
                                                                     .fillMaxWidth()
                                                                     .padding(top = 6.dp)
-                                                                    .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(10.dp))
-                                                                    .background(Color.White, RoundedCornerShape(10.dp))
+                                                                    .border(1.5.dp, colors.outline.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                                                    .background(colors.surface, RoundedCornerShape(10.dp))
                                                                     .padding(10.dp),
-                                                                textStyle = TextStyle(fontSize = 13.sp),
+                                                                textStyle = TextStyle(fontSize = 13.sp, color = colors.onSurface),
                                                                 singleLine = true
                                                             )
                                                         }
@@ -530,7 +526,7 @@ internal fun ExtractedTransectosDialog(
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .border(1.dp, Color(0xFFF1F3F5), RoundedCornerShape(12.dp))
+                                    .border(1.dp, colors.outline.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                             ) {
                                 LazyColumn(
                                     modifier = Modifier.fillMaxSize(),
@@ -541,8 +537,8 @@ internal fun ExtractedTransectosDialog(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(horizontal = 12.dp, vertical = 8.dp),
-                                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                                            border = BorderStroke(1.dp, Color(0xFFF1F3F5)),
+                                            colors = CardDefaults.cardColors(containerColor = colors.surface),
+                                            border = BorderStroke(1.dp, colors.outline.copy(alpha = 0.45f)),
                                             shape = RoundedCornerShape(14.dp)
                                         ) {
                                             Column(modifier = Modifier.padding(14.dp)) {
@@ -578,11 +574,11 @@ internal fun ExtractedTransectosDialog(
                                                         "${extractedDensTipoLabel(t.tipo)} ${t.num ?: (index + 1)}",
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Black,
-                                                        color = Color(0xFF003366),
+                                                        color = colors.onSurface,
                                                         modifier = Modifier.weight(1f)
                                                     )
                                                     IconButton(onClick = { transectosList.removeAt(index) }, modifier = Modifier.size(28.dp)) {
-                                                        Icon(Icons.Default.Delete, null, tint = Color.LightGray, modifier = Modifier.size(18.dp))
+                                                        Icon(Icons.Default.Delete, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
                                                     }
                                                 }
 
@@ -596,12 +592,12 @@ internal fun ExtractedTransectosDialog(
                                                     OutlinedButton(
                                                         onClick = { selectedTransectSpeciesNum = t.num ?: (index + 1) },
                                                         shape = RoundedCornerShape(10.dp),
-                                                        border = BorderStroke(1.dp, Color(0xFF003366))
+                                                        border = BorderStroke(1.dp, colors.primary)
                                                     ) {
                                                         val selectedCount = extractedSpeciesIdsFromCounts(t.counts).size
                                                         Text(
                                                             if (selectedCount > 0) "$selectedCount especies" else "Seleccionar especies",
-                                                            color = Color(0xFF003366),
+                                                            color = colors.primary,
                                                             fontWeight = FontWeight.Bold,
                                                             fontSize = 12.sp
                                                         )
@@ -609,7 +605,7 @@ internal fun ExtractedTransectosDialog(
                                                     Text(
                                                         "Detalles del transecto",
                                                         fontSize = 11.sp,
-                                                        color = Color.Gray,
+                                                        color = colors.onSurfaceVariant,
                                                         fontWeight = FontWeight.Medium
                                                     )
                                                 }
@@ -618,7 +614,7 @@ internal fun ExtractedTransectosDialog(
 
                                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                                     Column(modifier = Modifier.weight(1f)) {
-                                                        Text("AREA (M2)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                                        Text("AREA (M2)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
                                                         BasicTextField(
                                                             value = (t.area ?: 120.0).toString(),
                                                             onValueChange = { transectosList[index] = t.copy(area = it.toDoubleOrNull()) },
@@ -626,10 +622,10 @@ internal fun ExtractedTransectosDialog(
                                                                 .fillMaxWidth()
                                                                 .focusRequester(areaFocusRequester)
                                                                 .padding(top = 6.dp)
-                                                                .border(1.5.dp, Color(0xFFF1F3F5), RoundedCornerShape(10.dp))
-                                                                .background(Color.White, RoundedCornerShape(10.dp))
+                                                                .border(1.5.dp, colors.outline.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                                                .background(colors.surface, RoundedCornerShape(10.dp))
                                                                 .padding(10.dp),
-                                                            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Black),
+                                                            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.Black, color = colors.onSurface),
                                                             singleLine = true,
                                                             keyboardOptions = KeyboardOptions(
                                                                 keyboardType = KeyboardType.Number,

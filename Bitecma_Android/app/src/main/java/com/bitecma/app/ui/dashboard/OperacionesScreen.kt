@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.bitecma.app.ui.dashboard
 import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -189,27 +191,21 @@ private fun NuevaOperacionDialog(
     regionLabelById: Map<Int, String>,
     selectedRegionId: Int?,
     onRegionSelected: (Int?) -> Unit,
-    sectoresAmerbApi: List<SectorAmerbDto>,
     sectorAmerbInput: String,
     onSectorAmerbInputChange: (String) -> Unit,
-    selectedSectorAmerb: SectorAmerb?,
-    onSectorAmerbSelected: (SectorAmerb?) -> Unit,
     numSeguimiento: String,
     onNumSeguimientoChange: (String) -> Unit,
     fechaInicio: String,
     onFechaInicioClick: () -> Unit,
     fechaFin: String,
     onFechaFinClick: () -> Unit,
-    caletasApi: List<CaletaDto>,
     caletaInput: String,
     onCaletaInputChange: (String) -> Unit,
     onCaletaSelected: (String) -> Unit,
     tipoOrg: String,
     onTipoOrgChange: (String) -> Unit,
-    opasApi: List<OpaDto>,
     opaInput: String,
     onOpaInputChange: (String) -> Unit,
-    onOpaSelected: (Opa?) -> Unit,
     validationError: String?,
     onCreateClick: () -> Unit,
 ) {
@@ -220,27 +216,21 @@ private fun NuevaOperacionDialog(
         regionLabelById = regionLabelById,
         selectedRegionId = selectedRegionId,
         onRegionSelected = onRegionSelected,
-        sectoresAmerbApi = sectoresAmerbApi,
         sectorAmerbInput = sectorAmerbInput,
         onSectorAmerbInputChange = onSectorAmerbInputChange,
-        selectedSectorAmerb = selectedSectorAmerb,
-        onSectorAmerbSelected = onSectorAmerbSelected,
         numSeguimiento = numSeguimiento,
         onNumSeguimientoChange = onNumSeguimientoChange,
         fechaInicio = fechaInicio,
         onFechaInicioClick = onFechaInicioClick,
         fechaFin = fechaFin,
         onFechaFinClick = onFechaFinClick,
-        caletasApi = caletasApi,
         caletaInput = caletaInput,
         onCaletaInputChange = onCaletaInputChange,
         onCaletaSelected = onCaletaSelected,
         tipoOrg = tipoOrg,
         onTipoOrgChange = onTipoOrgChange,
-        opasApi = opasApi,
         opaInput = opaInput,
         onOpaInputChange = onOpaInputChange,
-        onOpaSelected = onOpaSelected,
         validationError = validationError,
         onCreateClick = onCreateClick,
     )
@@ -283,12 +273,10 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     var selectedRegionId by remember { mutableStateOf<Int?>(1) }
     var numSeguimiento by remember { mutableStateOf("") }
     var sectorAmerbInput by remember { mutableStateOf("") }
-    var selectedSectorAmerb by remember { mutableStateOf<SectorAmerb?>(null) }
     var caletaInput by remember { mutableStateOf("") }
     var selectedCaleta by remember { mutableStateOf<String?>(null) }
     var tipoOrg by remember { mutableStateOf("STI") }
     var opaInput by remember { mutableStateOf("") }
-    var selectedOpa by remember { mutableStateOf<Opa?>(null) }
     var fechaInicio by remember { mutableStateOf("") }
     var fechaFin by remember { mutableStateOf("") }
     var showInicioDatePicker by remember { mutableStateOf(false) }
@@ -302,9 +290,9 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
         val year = LocalDate.now().year
         "OP-$year-${numSeguimiento.ifEmpty { "XXX" }}"
     }
-    val sectorAmerbNombreActual = selectedSectorAmerb?.nombre?.takeIf { it.isNotBlank() } ?: sectorAmerbInput.trim()
+    val sectorAmerbNombreActual = sectorAmerbInput.trim()
     val caletaActual = selectedCaleta?.takeIf { it.isNotBlank() } ?: caletaInput.trim()
-    val organizacionActual = selectedOpa?.nombre?.takeIf { it.isNotBlank() } ?: opaInput.trim()
+    val organizacionActual = opaInput.trim()
 
     val operacionesUi by remember {
         derivedStateOf {
@@ -596,35 +584,19 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
         onRegionSelected = {
             selectedRegionId = it
             sectorAmerbInput = ""
-            selectedSectorAmerb = null
             caletaInput = ""
             selectedCaleta = null
             opaInput = ""
-            selectedOpa = null
             validationError = null
         },
-        sectoresAmerbApi = sectoresAmerbApi,
         sectorAmerbInput = sectorAmerbInput,
-        onSectorAmerbInputChange = {
-            sectorAmerbInput = it
-            if (!it.equals(selectedSectorAmerb?.nombre.orEmpty(), ignoreCase = true)) {
-                selectedSectorAmerb = null
-            }
-        },
-        selectedSectorAmerb = selectedSectorAmerb,
-        onSectorAmerbSelected = {
-            selectedSectorAmerb = it
-            if (it != null) {
-                sectorAmerbInput = it.nombre
-            }
-        },
+        onSectorAmerbInputChange = { sectorAmerbInput = it },
         numSeguimiento = numSeguimiento,
         onNumSeguimientoChange = { numSeguimiento = it },
         fechaInicio = fechaInicio,
         onFechaInicioClick = { showInicioDatePicker = true },
         fechaFin = fechaFin,
         onFechaFinClick = { showFinDatePicker = true },
-        caletasApi = caletasApi,
         caletaInput = caletaInput,
         onCaletaInputChange = {
             caletaInput = it
@@ -638,20 +610,8 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
         },
         tipoOrg = tipoOrg,
         onTipoOrgChange = { tipoOrg = it },
-        opasApi = opasApi,
         opaInput = opaInput,
-        onOpaInputChange = {
-            opaInput = it
-            if (!it.equals(selectedOpa?.nombre.orEmpty(), ignoreCase = true)) {
-                selectedOpa = null
-            }
-        },
-        onOpaSelected = {
-            selectedOpa = it
-            if (it != null) {
-                opaInput = it.nombre
-            }
-        },
+        onOpaInputChange = { opaInput = it },
         validationError = validationError,
         onCreateClick = {
             val error = validarNuevaOperacion(
@@ -686,10 +646,10 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         id = nomenclatura,
                         region = selectedRegionId,
                         sector = caletaActual,
-                        sectorAmerbId = selectedSectorAmerb?.id,
+                        sectorAmerbId = null,
                         sectorAmerb = sectorAmerbNombreActual,
                         tipoOrg = tipoOrg,
-                        opaId = selectedOpa?.id,
+                        opaId = null,
                         org = organizacionActual,
                         numSeg = numSeguimiento.toIntOrNull(),
                         fechaInicio = fechaInicio.ifBlank { null },
@@ -703,7 +663,6 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         // Reset de campos para la próxima creación
                         selectedRegionId = regiones.firstOrNull()?.id
                         sectorAmerbInput = ""
-                        selectedSectorAmerb = null
                         numSeguimiento = ""
                         fechaInicio = todayIso()
                         fechaFin = todayIso()
@@ -711,7 +670,6 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                         selectedCaleta = null
                         tipoOrg = "STI"
                         opaInput = ""
-                        selectedOpa = null
 
                         currentOpForBotes = finalOp
                         botesList.clear()
@@ -840,20 +798,7 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
                     onClick = {
                         pendingDeleteOperacion = null
                         scope.launch {
-                            var success = true
-                            if (itemToDelete.source == OperacionSource.BD && AppState.isEffectivelyOnline()) {
-                                try {
-                                    val res = RetrofitClient.apiService.eliminarOperacion(itemToDelete.op.id)
-                                    success = res.isSuccessful && res.body()?.ok == true
-                                } catch (_: Exception) {
-                                    success = false
-                                }
-                            }
-
-                            if (success) {
-                                DataManager.removeOperacion(itemToDelete.op.id, itemToDelete.source)
-                                DataManager.persistCache(ctx)
-                            }
+                            DataManager.deleteOperacion(ctx, itemToDelete.op.id, itemToDelete.source)
                         }
                     }
                 ) {

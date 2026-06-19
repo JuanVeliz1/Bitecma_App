@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.debounce
@@ -30,6 +31,7 @@ object NetworkMonitor {
         return hasUsableNetwork(caps)
     }
 
+    @OptIn(FlowPreview::class)
     fun observe(context: Context): Flow<Boolean> = callbackFlow {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         if (cm == null) {

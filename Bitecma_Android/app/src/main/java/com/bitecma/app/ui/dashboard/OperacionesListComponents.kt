@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.bitecma.app.ui.dashboard
 
 import androidx.compose.foundation.BorderStroke

@@ -9,17 +9,17 @@ import com.bitecma.app.data.local.LocalCacheStore
 import com.bitecma.app.data.local.OperationSyncStateRecord
 import com.bitecma.app.data.local.PendingTextFileRecord
 import com.bitecma.app.network.BoteMaestroDto
+import com.bitecma.app.network.AuthUser
 import com.bitecma.app.network.CaletaDto
 import com.bitecma.app.network.EspecieDto
-import com.bitecma.app.network.AuthLoginRequest
-import com.bitecma.app.network.ApiEnvelope
+import com.bitecma.app.network.FileContentDto
+import com.bitecma.app.network.FileMetaDto
 import com.bitecma.app.network.UploadTextFileRequest
 import com.bitecma.app.network.OperacionUpsertRequest
 import com.bitecma.app.network.OperacionDto
 import com.bitecma.app.network.OperacionBoteDto
 import com.bitecma.app.network.OpaDto
 import com.bitecma.app.network.RegionDto
-import com.bitecma.app.network.RetrofitClient
 import com.bitecma.app.network.SectorAmerbDto
 import com.bitecma.app.sync.SyncScheduler
 import com.google.gson.Gson
@@ -33,7 +33,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
-import retrofit2.Response
 
 enum class OperacionSource {
     BD,
@@ -82,6 +81,17 @@ object DataManager {
         val ultimoError: String? = null,
         val ultimoIntentoMs: Long? = null,
         val createdAt: Long = System.currentTimeMillis(),
+    )
+
+    data class DocumentUploadResult(
+        val uploaded: Boolean,
+        val files: List<FileMetaDto> = emptyList(),
+    )
+
+    data class LoginResult(
+        val success: Boolean,
+        val successMessage: String? = null,
+        val errorMessage: String? = null,
     )
 
     data class CatalogSnapshot(
@@ -138,6 +148,22 @@ object DataManager {
 
     val operacionesLc = mutableStateListOf<OperacionDto>()
 
+    private fun clearInMemoryData() {
+        botes.clear()
+        especies.clear()
+        regiones.clear()
+        sectoresAmerb.clear()
+        caletas.clear()
+        opas.clear()
+        botesMaestros.clear()
+        especiesMaestras.clear()
+        operacionesBd.clear()
+        dirtyOperacionIds.clear()
+        pendingTextFiles.clear()
+        estadosSyncOperacion.clear()
+        operacionesLc.clear()
+    }
+
     private fun cacheStore(context: Context): LocalCacheStore {
         return localStore ?: synchronized(this) {
             localStore ?: LocalCacheStore(LocalCacheDatabase.getInstance(context.applicationContext)).also { localStore = it }
@@ -154,6 +180,20 @@ object DataManager {
             snapshot.opas.isEmpty() &&
             snapshot.botesMaestros.isEmpty() &&
             snapshot.especiesMaestras.isEmpty()
+    }
+
+    private fun clearManualOnlyCatalogs() {
+        sectoresAmerb.clear()
+        caletas.clear()
+        opas.clear()
+        botesMaestros.clear()
+    }
+
+    private fun hasLegacyManualCatalogs(snapshot: LocalCacheSnapshot): Boolean {
+        return snapshot.sectoresAmerb.isNotEmpty() ||
+            snapshot.caletas.isNotEmpty() ||
+            snapshot.opas.isNotEmpty() ||
+            snapshot.botesMaestros.isNotEmpty()
     }
 
     private fun applySnapshot(snapshot: LocalCacheSnapshot) {
@@ -192,14 +232,7 @@ object DataManager {
 
         regiones.clear()
         regiones.addAll(snapshot.regiones)
-        sectoresAmerb.clear()
-        sectoresAmerb.addAll(snapshot.sectoresAmerb)
-        caletas.clear()
-        caletas.addAll(snapshot.caletas)
-        opas.clear()
-        opas.addAll(snapshot.opas)
-        botesMaestros.clear()
-        botesMaestros.addAll(snapshot.botesMaestros)
+        clearManualOnlyCatalogs()
         especiesMaestras.clear()
         especiesMaestras.addAll(snapshot.especiesMaestras)
         refreshDerivedMasters()
@@ -207,6 +240,7 @@ object DataManager {
     }
 
     private fun refreshDerivedMasters() {
+        botes.clear()
         if (botesMaestros.isNotEmpty()) {
             val mapped = botesMaestros.mapNotNull { b ->
                 val nombre = b.nombre?.trim().takeUnless { it.isNullOrEmpty() } ?: return@mapNotNull null
@@ -220,15 +254,16 @@ object DataManager {
                 )
             }.distinctBy { it.nombre.uppercase() }
             if (mapped.isNotEmpty()) {
-                botes.clear()
                 botes.addAll(mapped)
             }
         }
 
+        especies.clear()
         if (especiesMaestras.isNotEmpty()) {
-            especies.clear()
             especies.addAll(
-                especiesMaestras.map { e ->
+                especiesMaestras
+                    .distinctBy { "${it.com.trim().lowercase()}|${it.sci?.trim()?.lowercase().orEmpty()}" }
+                    .map { e ->
                     EspecieMaestra(
                         id = e.id,
                         nombreComun = e.com,
@@ -242,10 +277,10 @@ object DataManager {
     fun getCatalogSnapshot(): CatalogSnapshot {
         return CatalogSnapshot(
             regiones = regiones.toList(),
-            sectoresAmerb = sectoresAmerb.toList(),
-            caletas = caletas.toList(),
-            opas = opas.toList(),
-            botesMaestros = botesMaestros.toList(),
+            sectoresAmerb = emptyList(),
+            caletas = emptyList(),
+            opas = emptyList(),
+            botesMaestros = emptyList(),
             especiesMaestras = especiesMaestras.toList(),
         )
     }
@@ -253,14 +288,7 @@ object DataManager {
     private fun applyCatalogSnapshot(snapshot: CatalogSnapshot) {
         regiones.clear()
         regiones.addAll(snapshot.regiones)
-        sectoresAmerb.clear()
-        sectoresAmerb.addAll(snapshot.sectoresAmerb)
-        caletas.clear()
-        caletas.addAll(snapshot.caletas)
-        opas.clear()
-        opas.addAll(snapshot.opas)
-        botesMaestros.clear()
-        botesMaestros.addAll(snapshot.botesMaestros)
+        clearManualOnlyCatalogs()
         especiesMaestras.clear()
         especiesMaestras.addAll(snapshot.especiesMaestras)
         refreshDerivedMasters()
@@ -314,6 +342,9 @@ object DataManager {
         val roomSnapshot = runCatching { withContext(Dispatchers.IO) { cacheStore(context).loadSnapshot() } }.getOrNull()
         if (roomSnapshot != null && !isSnapshotEmpty(roomSnapshot)) {
             applySnapshot(roomSnapshot)
+            if (hasLegacyManualCatalogs(roomSnapshot)) {
+                persistCache(context)
+            }
             reconcileBackgroundSync(context)
             return
         }
@@ -393,6 +424,22 @@ object DataManager {
         }
     }
 
+    suspend fun clearLocalSessionData(context: Context) {
+        val appCtx = context.applicationContext
+        persistJob?.cancel()
+        persistJob = null
+        clearInMemoryData()
+        withContext(Dispatchers.IO) {
+            runCatching { cacheStore(appCtx).clearSnapshot() }
+        }
+        appCtx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_CACHE_V1)
+            .remove(KEY_LAST_CATALOG_SYNC_MS)
+            .apply()
+        reconcileBackgroundSync(appCtx)
+    }
+
     fun hasPendingSyncWork(): Boolean {
         return pendingTextFiles.isNotEmpty() ||
             estadosSyncOperacion.values.any {
@@ -408,16 +455,18 @@ object DataManager {
             (AppState.hasNetwork || AppState.authToken != null || hasPendingSyncWork())
     }
 
+    private fun hasRemoteSession(): Boolean {
+        return !AppState.forceOffline &&
+            AppState.hasNetwork &&
+            !AppState.authToken.isNullOrBlank()
+    }
+
     fun reconcileBackgroundSync(context: Context) {
         SyncScheduler.reconcile(context.applicationContext, shouldRunBackgroundSync())
     }
 
     private fun hasCatalogData(): Boolean {
         return regiones.isNotEmpty() ||
-            sectoresAmerb.isNotEmpty() ||
-            caletas.isNotEmpty() ||
-            opas.isNotEmpty() ||
-            botesMaestros.isNotEmpty() ||
             especiesMaestras.isNotEmpty()
     }
 
@@ -639,31 +688,21 @@ object DataManager {
             return saved.copy(botes = normalizedBotes + additionalRequested)
         }
 
-        fun resolveSavedOperacion(response: Response<ApiEnvelope<OperacionDto>>?): OperacionDto? {
-            if (response == null || !response.isSuccessful) return null
-            val body = response.body()
-            if (body?.ok == false) return null
-            val saved = body?.data ?: op
+        fun resolveSavedOperacion(result: RemoteEnvelopeResult<OperacionDto>): OperacionDto? {
+            if (!result.ok) return null
+            val saved = result.data ?: op
             return normalizeMutationSavedOperacion(op, saved)
         }
 
-        val updated = runCatching {
-            val res = RetrofitClient.apiService.actualizarOperacion(op.id, req)
-            resolveSavedOperacion(res)
-        }.getOrNull()
+        val updated = resolveSavedOperacion(DataRemoteSource.actualizarOperacion(op.id, req))
         if (updated != null) return updated
 
-        return runCatching {
-            val res = RetrofitClient.apiService.crearOperacion(req)
-            resolveSavedOperacion(res)
-        }.getOrNull()
+        return resolveSavedOperacion(DataRemoteSource.crearOperacion(req))
     }
 
-    private fun <T> extractEnvelopeData(response: Response<ApiEnvelope<T>>?): T? {
-        if (response == null || !response.isSuccessful) return null
-        val body = response.body() ?: return null
-        if (body.ok != true) return null
-        return body.data
+    private fun <T> extractRemoteData(result: RemoteEnvelopeResult<T>): T? {
+        if (!result.ok) return null
+        return result.data
     }
 
     private fun normalizedBoatField(value: String?): String {
@@ -782,7 +821,7 @@ object DataManager {
     private fun mergeServerOperations(serverOps: List<OperacionDto>) {
         deduplicateOperationSources()
         val dirtySet = dirtyOperacionIds.toSet()
-    val currentBdOrder = operacionesBd.map { it.id }
+        val currentBdOrder = operacionesBd.map { it.id }
         val localById = (operacionesBd + operacionesLc)
             .groupBy { it.id }
             .mapValues { (_, ops) -> ops.reduce { acc, op -> mergeOperationSnapshots(acc, op) } }
@@ -796,39 +835,30 @@ object DataManager {
                 else -> op
             }
         })
-    operacionesBd.addAll(
-        currentBdOrder.mapNotNull { id ->
-            localById[id]?.takeIf { id !in serverIds }
-        }
-    )
+        operacionesBd.addAll(
+            currentBdOrder.mapNotNull { id ->
+                localById[id]?.takeIf { id !in serverIds && id in dirtySet }
+            },
+        )
         operacionesLc.removeAll { it.id in serverIds }
         normalizeSyncStates()
     }
 
     private suspend fun fetchRemoteOperations(): List<OperacionDto>? {
-        val opsRes = runCatching { RetrofitClient.apiService.getOperaciones() }.getOrNull()
-        return extractEnvelopeData(opsRes)
+        return extractRemoteData(DataRemoteSource.getOperaciones())
     }
 
     private suspend fun fetchRemoteCatalogSnapshot(currentCatalog: CatalogSnapshot = getCatalogSnapshot()): CatalogSnapshot? = coroutineScope {
-        val regDeferred = async { runCatching { RetrofitClient.apiService.getRegiones() }.getOrNull() }
-        val secDeferred = async { runCatching { RetrofitClient.apiService.getSectoresAmerb() }.getOrNull() }
-        val calDeferred = async { runCatching { RetrofitClient.apiService.getCaletas() }.getOrNull() }
-        val opaDeferred = async { runCatching { RetrofitClient.apiService.getOpas() }.getOrNull() }
-        val botesDeferred = async { runCatching { RetrofitClient.apiService.getBotes() }.getOrNull() }
-        val especiesDeferred = async { runCatching { RetrofitClient.apiService.getEspecies() }.getOrNull() }
-        val regionesRemote = extractEnvelopeData(regDeferred.await())
-        val sectoresRemote = extractEnvelopeData(secDeferred.await())
-        val caletasRemote = extractEnvelopeData(calDeferred.await())
-        val opasRemote = extractEnvelopeData(opaDeferred.await())
-        val botesRemote = extractEnvelopeData(botesDeferred.await())
-        val especiesRemote = extractEnvelopeData(especiesDeferred.await())
+        val regDeferred = async { DataRemoteSource.getRegiones() }
+        val especiesDeferred = async { DataRemoteSource.getEspecies() }
+        val regionesRemote = extractRemoteData(regDeferred.await())
+        val especiesRemote = extractRemoteData(especiesDeferred.await())
         CatalogSnapshot(
             regiones = preferNonEmptyCatalog(regionesRemote, currentCatalog.regiones),
-            sectoresAmerb = preferNonEmptyCatalog(sectoresRemote, currentCatalog.sectoresAmerb),
-            caletas = preferNonEmptyCatalog(caletasRemote, currentCatalog.caletas),
-            opas = preferNonEmptyCatalog(opasRemote, currentCatalog.opas),
-            botesMaestros = preferNonEmptyCatalog(botesRemote, currentCatalog.botesMaestros),
+            sectoresAmerb = emptyList(),
+            caletas = emptyList(),
+            opas = emptyList(),
+            botesMaestros = emptyList(),
             especiesMaestras = preferNonEmptyCatalog(especiesRemote, currentCatalog.especiesMaestras),
         )
     }
@@ -863,30 +893,48 @@ object DataManager {
         normalizeSyncStates()
     }
 
+    private suspend fun syncPendingOperacion(op: OperacionDto): Boolean {
+        markOperacionSyncing(op.id)
+        val saved = uploadOperacion(op)
+        if (saved != null) {
+            applySavedOperacion(saved)
+            return true
+        }
+        markOperacionSyncError(op.id)
+        return false
+    }
+
+    private suspend fun syncPendingFile(file: PendingTextFile) {
+        val fileId = file.id ?: buildPendingFileId(file.name, file.opId, file.createdAt)
+        markPendingFileSyncing(fileId)
+        val result = DataRemoteSource.uploadTextFile(
+            UploadTextFileRequest(
+                name = file.name,
+                opId = file.opId,
+                text = file.text,
+            ),
+        )
+        if (result.ok) {
+            pendingTextFiles.removeAll { it.id == fileId }
+        } else {
+            markPendingFileError(fileId)
+        }
+    }
+
     private suspend fun flushPendingOps(): Boolean {
         var any = false
         val pendingLc = operacionesLc.toList()
         pendingLc.forEach { op ->
-            markOperacionSyncing(op.id)
-            val saved = uploadOperacion(op)
-            if (saved != null) {
+            if (syncPendingOperacion(op)) {
                 any = true
-                applySavedOperacion(saved)
-            } else {
-                markOperacionSyncError(op.id)
             }
         }
 
         val dirtyIds = dirtyOperacionIds.toList()
         dirtyIds.forEach { id ->
             val op = (operacionesBd + operacionesLc).firstOrNull { it.id == id } ?: return@forEach
-            markOperacionSyncing(id)
-            val saved = uploadOperacion(op)
-            if (saved != null) {
+            if (syncPendingOperacion(op)) {
                 any = true
-                applySavedOperacion(saved)
-            } else {
-                markOperacionSyncError(id)
             }
         }
 
@@ -895,55 +943,187 @@ object DataManager {
 
     private suspend fun flushPendingFiles() {
         val pending = pendingTextFiles.toList()
-        pending.forEach { f ->
-            val fileId = f.id ?: buildPendingFileId(f.name, f.opId, f.createdAt)
-            markPendingFileSyncing(fileId)
-            val res = runCatching {
-                RetrofitClient.apiService.uploadTextFile(UploadTextFileRequest(name = f.name, opId = f.opId, text = f.text))
-            }.getOrNull()
-            if (res != null && res.isSuccessful && res.body()?.ok == true) {
-                pendingTextFiles.removeAll { it.id == fileId }
-            } else {
-                markPendingFileError(fileId)
-            }
+        pending.forEach { syncPendingFile(it) }
+    }
+
+    private fun canStartRemoteSync(context: Context): Boolean {
+        if (AppState.forceOffline) {
+            return false
         }
+        if (!AppState.hasNetwork) {
+            AppState.registerSyncFailure("Sin conectividad")
+            reconcileBackgroundSync(context)
+            return false
+        }
+        if (AppState.authToken.isNullOrBlank()) {
+            reconcileBackgroundSync(context)
+            return false
+        }
+        return true
+    }
+
+    private suspend fun refreshRemoteOperationsIntoMemory(): Boolean {
+        val refreshedOps = runCatching { fetchRemoteOperations() }.getOrNull() ?: return false
+        mergeServerOperations(refreshedOps)
+        return true
+    }
+
+    private suspend fun refreshCatalogsIntoMemory(
+        context: Context,
+        force: Boolean,
+        allowCachedCatalogFallback: Boolean,
+    ): Boolean {
+        if (!shouldRefreshCatalogs(context, force = force)) return true
+        val remoteCatalog = runCatching { fetchRemoteCatalogSnapshot() }.getOrNull()
+        if (remoteCatalog != null) {
+            applyCatalogSnapshot(remoteCatalog)
+            markCatalogSyncSuccess(context)
+            return true
+        }
+        return allowCachedCatalogFallback && hasCatalogData()
+    }
+
+    private suspend fun refreshCatalogsAfterSync(context: Context, force: Boolean): Boolean {
+        return refreshCatalogsIntoMemory(
+            context = context,
+            force = force,
+            allowCachedCatalogFallback = true,
+        )
     }
 
     suspend fun tryUploadOperacion(context: Context, op: OperacionDto): Boolean {
-        if (AppState.forceOffline) return false
-        if (!AppState.hasNetwork) return false
-        if (AppState.authToken.isNullOrBlank()) return false
-        markOperacionSyncing(op.id)
-        val saved = uploadOperacion(op)
-        if (saved == null) {
-            markOperacionSyncError(op.id)
+        if (!hasRemoteSession()) return false
+        if (!syncPendingOperacion(op)) {
             return false
         }
-        applySavedOperacion(saved)
         AppState.registerSyncSuccess()
         persistCache(context)
         return true
     }
 
-    suspend fun refreshCatalogs(context: Context, force: Boolean = false): Boolean {
-        if (AppState.forceOffline) return false
-        if (!AppState.hasNetwork) return false
-        if (AppState.authToken.isNullOrBlank()) return false
-        if (!shouldRefreshCatalogs(context, force)) return true
+    suspend fun getRemoteFiles(opId: String?): List<FileMetaDto> {
+        if (!hasRemoteSession()) return emptyList()
+        return extractRemoteData(DataRemoteSource.getFiles(opId)).orEmpty()
+    }
 
-        val snapshot = runCatching { fetchRemoteCatalogSnapshot() }.getOrNull() ?: return false
-        applyCatalogSnapshot(snapshot)
-        markCatalogSyncSuccess(context)
+    suspend fun uploadTextFileOrQueue(context: Context, req: UploadTextFileRequest): DocumentUploadResult {
+        val canUpload = hasRemoteSession()
+        if (canUpload) {
+            val uploadResult = DataRemoteSource.uploadTextFile(req)
+            if (uploadResult.ok) {
+                val refreshedFiles = getRemoteFiles(req.opId)
+                persistCache(context)
+                return DocumentUploadResult(uploaded = true, files = refreshedFiles)
+            }
+        }
+
+        enqueueTextFile(req)
+        persistCache(context)
+        return DocumentUploadResult(uploaded = false)
+    }
+
+    suspend fun downloadRemoteFile(fileId: String): FileContentDto? {
+        if (!hasRemoteSession()) return null
+        return extractRemoteData(DataRemoteSource.getFile(fileId))
+    }
+
+    suspend fun pingServidor(): Boolean {
+        if (!hasRemoteSession()) return false
+        return DataRemoteSource.ping()
+    }
+
+    private suspend fun applyAuthenticatedSession(
+        context: Context,
+        email: String,
+        token: String,
+        user: AuthUser?,
+    ): LoginResult {
+        AppState.isOnline = true
+        AppState.authToken = token
+        AppState.currentUserEmail = email
+        AppState.forceOffline = false
+        AppState.hasVerifiedSession = true
+        AppState.currentUserId = user?.uid ?: user?.id
+        AppState.currentUserName = user?.nombre
+        AppState.currentUserRole = user?.rol
+        AppState.persistSession(context)
+        AppState.hasNetwork = true
+        AppState.saveLastLoginNow(context, email)
+        reconcileBackgroundSync(context)
+        SyncScheduler.scheduleImmediate(context)
+        runCatching { syncAllFromServer(context) }
+        return LoginResult(
+            success = true,
+            successMessage = "Bienvenido ${user?.nombre ?: ""} (Online)",
+        )
+    }
+
+    private fun resolveLoginFailure(result: RemoteLoginResult): LoginResult {
+        if (result.error != null) {
+            return LoginResult(
+                success = false,
+                errorMessage = result.error,
+            )
+        }
+
+        val code = result.code
+        return if (code == 401 || code == 403) {
+            LoginResult(success = false, errorMessage = "Correo o contraseña incorrectos")
+        } else {
+            LoginResult(success = false, errorMessage = "No se pudo conectar con el servidor ($code)")
+        }
+    }
+
+    suspend fun loginUsuario(context: Context, email: String, password: String): LoginResult {
+        val result = DataRemoteSource.login(email, password)
+        if (result.code == null) return LoginResult(
+            success = false,
+            errorMessage = "Necesitas internet para iniciar sesión con tu cuenta registrada",
+        )
+
+        val token = result.token
+        if (result.ok && !token.isNullOrBlank()) {
+            return applyAuthenticatedSession(
+                context = context,
+                email = email,
+                token = token,
+                user = result.user,
+            )
+        }
+        return resolveLoginFailure(result)
+    }
+
+    suspend fun deleteOperacion(context: Context, opId: String, source: OperacionSource): Boolean {
+        var success = true
+        if (source == OperacionSource.BD && AppState.isEffectivelyOnline()) {
+            success = DataRemoteSource.eliminarOperacion(opId).ok
+        }
+
+        if (success) {
+            removeOperacion(opId, source)
+            persistCache(context)
+        }
+        return success
+    }
+
+    suspend fun refreshCatalogs(context: Context, force: Boolean = false): Boolean {
+        if (!hasRemoteSession()) return false
+        val refreshed = refreshCatalogsIntoMemory(
+            context = context,
+            force = force,
+            allowCachedCatalogFallback = false,
+        )
+        if (!refreshed) return false
         persistCache(context)
         return true
     }
 
     suspend fun refreshOperacionDetail(context: Context, opId: String): OperacionDto? {
         val local = (operacionesBd + operacionesLc).firstOrNull { it.id == opId }
-        if (AppState.forceOffline || AppState.authToken.isNullOrBlank() || !AppState.hasNetwork) {
+        if (!hasRemoteSession()) {
             return local
         }
-        val fresh = extractEnvelopeData(runCatching { RetrofitClient.apiService.getOperacion(opId) }.getOrNull()) ?: return local
+        val fresh = extractRemoteData(DataRemoteSource.getOperacion(opId)) ?: return local
         upsertOperacionInMemory(fresh)
         persistCache(context)
         return (operacionesBd + operacionesLc).firstOrNull { it.id == opId } ?: fresh
@@ -953,13 +1133,8 @@ object DataManager {
         val local = buildLocalOperacion(req)
         if (AppState.isEffectivelyOnline()) {
             val saved = runCatching {
-                val response = RetrofitClient.apiService.crearOperacion(req)
-                if (!response.isSuccessful) {
-                    null
-                } else {
-                    val body = response.body()
-                    if (body?.ok == false) null else body?.data ?: local
-                }
+                val result = DataRemoteSource.crearOperacion(req)
+                if (!result.ok) null else result.data ?: local
             }.getOrNull()
             if (saved != null) {
                 applySavedOperacion(saved)
@@ -977,37 +1152,16 @@ object DataManager {
     suspend fun syncAllFromServer(context: Context): Boolean {
         if (!syncMutex.tryLock()) return false
         try {
-            if (AppState.forceOffline) return false
-            if (!AppState.hasNetwork) {
-                AppState.registerSyncFailure("Sin conectividad")
-                reconcileBackgroundSync(context)
-                return false
-            }
-            if (AppState.authToken.isNullOrBlank()) {
-                reconcileBackgroundSync(context)
+            if (!canStartRemoteSync(context)) {
                 return false
             }
 
             val anyUploaded = flushPendingOps()
             flushPendingFiles()
 
-            var syncOk = true
-            val refreshedOps = runCatching { fetchRemoteOperations() }.getOrNull()
-            if (refreshedOps != null) {
-                mergeServerOperations(refreshedOps)
-            } else {
-                syncOk = false
-            }
-
-            if (shouldRefreshCatalogs(context, force = anyUploaded)) {
-                val remoteCatalog = runCatching { fetchRemoteCatalogSnapshot() }.getOrNull()
-                if (remoteCatalog != null) {
-                    applyCatalogSnapshot(remoteCatalog)
-                    markCatalogSyncSuccess(context)
-                } else if (!hasCatalogData()) {
-                    syncOk = false
-                }
-            }
+            val operationsSynced = refreshRemoteOperationsIntoMemory()
+            val catalogsSynced = refreshCatalogsAfterSync(context, force = anyUploaded)
+            val syncOk = operationsSynced && catalogsSynced
 
             if (syncOk) AppState.registerSyncSuccess()
             else AppState.registerSyncFailure("No se pudo sincronizar con la nube")

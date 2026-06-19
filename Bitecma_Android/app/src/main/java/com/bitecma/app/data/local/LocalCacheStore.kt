@@ -158,6 +158,15 @@ class LocalCacheStore(
         }
     }
 
+    suspend fun clearSnapshot() {
+        val dao = db.localCacheDao()
+        db.withTransaction {
+            dao.clearOperations()
+            dao.clearMasterLists()
+            dao.clearPendingFiles()
+        }
+    }
+
     private inline fun <reified T> parseList(json: String?): List<T> {
         if (json.isNullOrBlank()) return emptyList()
         return runCatching {

@@ -20,6 +20,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -56,12 +57,16 @@ internal fun ExtractedSpeciesPickerDialog(
     onDismiss: () -> Unit,
     onApply: (Set<Int>) -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var query by remember { mutableStateOf("") }
     val selected = remember(currentSelectedIds) { mutableStateListOf<Int>().apply { addAll(currentSelectedIds) } }
-    val filtered = remember(species, query) {
+    val uniqueSpecies = remember(species) {
+        species.distinctBy { "${it.com.trim().lowercase()}|${it.sci?.trim()?.lowercase().orEmpty()}" }
+    }
+    val filtered = remember(uniqueSpecies, query) {
         val q = query.trim().lowercase()
-        if (q.isBlank()) species
-        else species.filter {
+        if (q.isBlank()) uniqueSpecies
+        else uniqueSpecies.filter {
             it.com.lowercase().contains(q) ||
                 (it.sci ?: "").lowercase().contains(q)
         }
@@ -71,10 +76,10 @@ internal fun ExtractedSpeciesPickerDialog(
         Surface(
             modifier = Modifier.fillMaxWidth(0.92f).fillMaxHeight(0.88f),
             shape = RoundedCornerShape(18.dp),
-            color = Color.White
+            color = colors.surface
         ) {
             Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                Text(title, fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color(0xFF003366))
+                Text(title, fontWeight = FontWeight.Black, fontSize = 16.sp, color = colors.onSurface)
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = query,
@@ -111,14 +116,14 @@ internal fun ExtractedSpeciesPickerDialog(
                             )
                             Spacer(Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(sp.com, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF003366))
+                                Text(sp.com, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = colors.onSurface)
                                 val sci = sp.sci
                                 if (!sci.isNullOrBlank()) {
-                                    Text(sci, fontSize = 11.sp, color = Color.Gray, maxLines = 1)
+                                    Text(sci, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1)
                                 }
                             }
                         }
-                        HorizontalDivider(color = Color(0xFFF1F3F5))
+                        HorizontalDivider(color = colors.outline.copy(alpha = 0.45f))
                     }
                 }
 
@@ -133,7 +138,7 @@ internal fun ExtractedSpeciesPickerDialog(
                         onClick = { onApply(selected.toSet()) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.secondary)
                     ) { Text("Aplicar", fontWeight = FontWeight.Black) }
                 }
             }

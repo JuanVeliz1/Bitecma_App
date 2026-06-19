@@ -3,8 +3,6 @@ package com.bitecma.app.ui.dashboard
 import android.content.Context
 import com.bitecma.app.data.AppState
 import com.bitecma.app.data.DataManager
-import com.bitecma.app.data.MasterData
-import com.bitecma.app.network.BoteMaestroDto
 import com.bitecma.app.network.CaletaDto
 import com.bitecma.app.network.DensidadUnidadDto
 import com.bitecma.app.network.EspecieDto
@@ -46,27 +44,6 @@ fun normalizarTextoBusqueda(value: String?): String {
         .replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "")
         .lowercase()
         .trim()
-}
-
-fun buildFallbackBotesMaestros(): List<BoteMaestroDto> {
-    return MasterData.botes.mapIndexed { index, bote ->
-        val regionParts = bote.regionId.split("—", limit = 2).map { it.trim() }
-        BoteMaestroDto(
-            id = -(index + 1),
-            region_rom = regionParts.firstOrNull(),
-            region = regionParts.getOrNull(1),
-            nombre = bote.nombre,
-            nrpa = bote.rpa,
-            nmatricula = bote.matricula,
-            caleta = bote.caleta,
-        )
-    }.distinctBy { bote ->
-        listOf(
-            normalizarTextoBusqueda(bote.nombre),
-            normalizarTextoBusqueda(bote.caleta),
-            normalizarTextoBusqueda(bote.nrpa),
-        ).joinToString("|")
-    }
 }
 
 fun prepararEstadoEdicionBote(

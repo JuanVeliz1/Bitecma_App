@@ -67,15 +67,12 @@ private fun rememberStableNetworkFlag(): Boolean {
 
 @Composable
 private fun rememberConnectionStatusUi(
-    esInvitado: Boolean,
     isConnecting: Boolean,
     displayHasNetwork: Boolean,
 ): ConnectionStatusUi {
     val colors = MaterialTheme.colorScheme
     return remember(
-        esInvitado,
         isConnecting,
-        AppState.forceOffline,
         displayHasNetwork,
         AppState.hasAuthenticatedSession(),
         AppState.lastSyncError,
@@ -87,21 +84,9 @@ private fun rememberConnectionStatusUi(
                 accentColor = colors.error,
                 containerColor = colors.bitecmaDangerBg,
             )
-            esInvitado -> ConnectionStatusUi(
-                title = "RED DISPONIBLE",
-                detail = "Hay internet, pero estas trabajando sin cuenta",
-                accentColor = colors.bitecmaNavy,
-                containerColor = colors.bitecmaAmberBg,
-            )
             isConnecting -> ConnectionStatusUi(
                 title = "RED DISPONIBLE",
                 detail = "Internet activo. Preparando la sincronizacion",
-                accentColor = colors.bitecmaNavy,
-                containerColor = colors.bitecmaBlueBg,
-            )
-            AppState.forceOffline -> ConnectionStatusUi(
-                title = "RED DISPONIBLE",
-                detail = "Internet activo, pero la sincronizacion esta pausada manualmente",
                 accentColor = colors.bitecmaNavy,
                 containerColor = colors.bitecmaBlueBg,
             )
@@ -154,10 +139,8 @@ fun DashboardScreen(
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     var isConnecting by remember { mutableStateOf(false) }
-    val esInvitado = AppState.isGuestMode
     val displayHasNetwork = rememberStableNetworkFlag()
     val connectionStatus = rememberConnectionStatusUi(
-        esInvitado = esInvitado,
         isConnecting = isConnecting,
         displayHasNetwork = displayHasNetwork,
     )
@@ -188,7 +171,7 @@ fun DashboardScreen(
         }
     }
 
-    LaunchedEffect(AppState.forceOffline, AppState.authToken) {
+    LaunchedEffect(AppState.authToken) {
         DataManager.reconcileBackgroundSync(ctx)
     }
 
@@ -229,95 +212,7 @@ fun DashboardScreen(
                     onClick = { scope.launch { drawerState.close() }; navController.navigate(AppRoutes.especies(userId)) },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 )
-
-                NavigationDrawerItem(
-                    label = { Text("Botes") },
-                    selected = false,
-                    onClick = { scope.launch { drawerState.close() }; navController.navigate(AppRoutes.botes(userId)) },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                )
                 Spacer(modifier = Modifier.weight(1f))
-                
-                if (AppState.hasAuthenticatedSession()) {
-                    Surface(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .fillMaxWidth(),
-                        color = colors.bitecmaSoftBackground,
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Sincronizacion", fontSize = 11.sp, fontWeight = FontWeight.Black, color = colors.bitecmaNavy)
-                                Text(
-                                    if (AppState.forceOffline) "Pausada manualmente" else "Habilitada con la nube",
-                                    fontSize = 10.sp,
-                                    color = colors.bitecmaMutedText
-                                )
-                            }
-                            Switch(
-                                checked = !AppState.forceOffline,
-                                enabled = !isConnecting,
-                                onCheckedChange = { checked ->
-                                    if (isConnecting) return@Switch
-                                    AppState.forceOffline = !checked
-                                    if (AppState.forceOffline) {
-                                        AppState.isOnline = false
-                                        AppState.persistSession(ctx)
-                                        DataManager.reconcileBackgroundSync(ctx)
-                                        return@Switch
-                                    }
-                                    AppState.persistSession(ctx)
-                                    scope.launch {
-                                        isConnecting = true
-                                        val ok = runCatching { DataManager.ensureAuthenticatedOnlineSession(ctx) }.getOrNull() == true
-                                        if (ok) {
-                                            DataManager.reconcileBackgroundSync(ctx)
-                                            runCatching { DataManager.syncAllFromServer(ctx) }
-                                        } else {
-                                            AppState.isOnline = false
-                                            AppState.persistSession(ctx)
-                                            DataManager.reconcileBackgroundSync(ctx)
-                                        }
-                                        isConnecting = false
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-
-                if (esInvitado) {
-                    Surface(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .fillMaxWidth(),
-                        color = colors.bitecmaAmberBg,
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Modo sin cuenta", fontSize = 12.sp, fontWeight = FontWeight.Black, color = colors.bitecmaNavy)
-                            Text(
-                                "Puedes trabajar normal, pero nada se sincroniza con la base hasta que conectes una cuenta.",
-                                fontSize = 10.sp,
-                                color = colors.bitecmaSubtleText
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = {
-                                    scope.launch { drawerState.close() }
-                                    navController.navigate(AppRoutes.LOGIN)
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Conectar cuenta")
-                            }
-                        }
-                    }
-                }
 
                 Surface(
                     modifier = Modifier
@@ -376,14 +271,6 @@ fun DashboardScreen(
                                     textAlign = TextAlign.Center
                                 )
                             }
-                            if (esInvitado && (operacionesPendientes > 0 || archivosPendientes > 0)) {
-                                Text(
-                                    text = "Conecta una cuenta cuando tengas internet para subir estos pendientes a la base.",
-                                    fontSize = 10.sp,
-                                    color = colors.bitecmaNavy,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
                         }
                     }
                 }
@@ -407,25 +294,17 @@ fun DashboardScreen(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 )
                 HorizontalDivider(color = colors.bitecmaBorder)
-                if (esInvitado) {
-                    NavigationDrawerItem(
-                        label = { Text("Conectar cuenta") },
-                        selected = false,
-                        onClick = {
-                            scope.launch { drawerState.close() }
-                            navController.navigate(AppRoutes.LOGIN)
-                        },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                    )
-                }
                 NavigationDrawerItem(
-                    label = { Text(if (esInvitado) "Salir del modo sin cuenta" else "Cerrar sesión", color = colors.error) },
+                    label = { Text("Cerrar sesión", color = colors.error) },
                     selected = false,
                     onClick = {
-                        scope.launch { drawerState.close() }
-                        AppState.clearSession(ctx)
-                        navController.navigate(AppRoutes.LOGIN) {
-                            popUpTo(0)
+                        scope.launch {
+                            drawerState.close()
+                            AppState.clearSession(ctx)
+                            DataManager.clearLocalSessionData(ctx)
+                            navController.navigate(AppRoutes.LOGIN) {
+                                popUpTo(0)
+                            }
                         }
                     },
                     modifier = Modifier.padding(12.dp)
@@ -461,10 +340,8 @@ fun DashboardScreen(
 
                 item {
                     DashboardStatusCard(
-                        esInvitado = esInvitado,
                         isConnecting = isConnecting,
                         displayHasNetwork = displayHasNetwork,
-                        connectionStatus = connectionStatus,
                         operacionesPendientes = operacionesPendientes,
                         archivosPendientes = archivosPendientes,
                         operacionesConError = operacionesConError,
@@ -477,7 +354,6 @@ fun DashboardScreen(
                     DashboardQuickActions(
                         onOperaciones = { navController.navigate(AppRoutes.operaciones(userId)) },
                         onEspecies = { navController.navigate(AppRoutes.especies(userId)) },
-                        onBotes = { navController.navigate(AppRoutes.botes(userId)) },
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
@@ -652,39 +528,33 @@ fun DashboardScreen(
 
 @Composable
 private fun DashboardStatusCard(
-    esInvitado: Boolean,
     isConnecting: Boolean,
     displayHasNetwork: Boolean,
-    connectionStatus: ConnectionStatusUi,
     operacionesPendientes: Int,
     archivosPendientes: Int,
     operacionesConError: Int,
     archivosConError: Int,
 ) {
     val colors = MaterialTheme.colorScheme
-    val syncEnabled = displayHasNetwork && AppState.hasAuthenticatedSession() && !AppState.forceOffline
+    val syncEnabled = displayHasNetwork && AppState.hasAuthenticatedSession()
     val title = when {
-        esInvitado -> "Trabajo local sin cuenta"
         isConnecting -> "Conectando y sincronizando"
         syncEnabled -> "Sincronizacion habilitada"
-        displayHasNetwork -> "Trabajo local con red disponible"
+        displayHasNetwork -> "Sincronizacion disponible"
         else -> "Trabajo local sin red"
     }
     val detail = when {
-        esInvitado -> "Puedes registrar operaciones y archivos, pero quedaran pendientes hasta conectar una cuenta."
         isConnecting -> "La app esta validando sesion y preparando la sincronizacion."
         syncEnabled -> "La sincronizacion esta habilitada para operaciones y documentos."
-        displayHasNetwork -> "Hay internet, pero la app sigue en trabajo local hasta habilitar sincronizacion."
+        displayHasNetwork -> "Hay internet disponible. La app sincronizara automaticamente cuando corresponda."
         else -> "La app sigue trabajando con cache local y cola de pendientes para sincronizar despues."
     }
     val containerColor = when {
-        esInvitado -> colors.bitecmaAmberBg
         isConnecting -> colors.bitecmaBlueBg
         syncEnabled -> colors.bitecmaSuccessBg
         else -> colors.bitecmaSoftBackgroundAlt
     }
     val accentColor = when {
-        esInvitado -> colors.bitecmaNavy
         isConnecting -> colors.bitecmaNavy
         syncEnabled -> colors.bitecmaTeal
         else -> colors.bitecmaNavy
@@ -733,7 +603,6 @@ private fun StatusPill(label: String, value: String, isError: Boolean = false) {
 private fun DashboardQuickActions(
     onOperaciones: () -> Unit,
     onEspecies: () -> Unit,
-    onBotes: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     Column {
@@ -742,11 +611,6 @@ private fun DashboardQuickActions(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             QuickActionCard("Operaciones", Icons.Default.EditNote, colors.bitecmaTealContainer, colors.bitecmaTeal, Modifier.weight(1f), onOperaciones)
             QuickActionCard("Especies", Icons.Default.SetMeal, colors.bitecmaSoftBackgroundAlt, colors.bitecmaNavy, Modifier.weight(1f), onEspecies)
-        }
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            QuickActionCard("Botes", Icons.Default.DirectionsBoat, colors.bitecmaCardBackground, colors.bitecmaNavy, Modifier.weight(1f), onBotes)
-            Spacer(modifier = Modifier.weight(1f))
         }
     }
 }

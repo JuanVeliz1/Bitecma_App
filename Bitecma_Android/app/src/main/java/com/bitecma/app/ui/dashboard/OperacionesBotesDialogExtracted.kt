@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.bitecma.app.ui.dashboard
 
 import androidx.compose.foundation.BorderStroke
@@ -36,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.bitecma.app.data.MasterData
 import com.bitecma.app.network.BoteMaestroDto
 import com.bitecma.app.network.OperacionBoteDto
 import java.text.Normalizer
@@ -46,27 +47,6 @@ private fun normalizeBoatText(value: String?): String {
         .replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "")
         .lowercase()
         .trim()
-}
-
-private fun buildFallbackBoatMasters(): List<BoteMaestroDto> {
-    return MasterData.botes.mapIndexed { index, bote ->
-        val regionParts = bote.regionId.split("—", limit = 2).map { it.trim() }
-        BoteMaestroDto(
-            id = -(index + 1),
-            region_rom = regionParts.firstOrNull(),
-            region = regionParts.getOrNull(1),
-            nombre = bote.nombre,
-            nrpa = bote.rpa,
-            nmatricula = bote.matricula,
-            caleta = bote.caleta,
-        )
-    }.distinctBy { bote ->
-        listOf(
-            normalizeBoatText(bote.nombre),
-            normalizeBoatText(bote.caleta),
-            normalizeBoatText(bote.nrpa),
-        ).joinToString("|")
-    }
 }
 
 @Composable
@@ -100,9 +80,8 @@ internal fun ExtractedGestionBotesDialog(
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val isCompactLayout = maxWidth < 700.dp
-                val fallbackBotesMaestros = remember { buildFallbackBoatMasters() }
                 val availableBotesMaestros = remember(botesMaestros) {
-                    (botesMaestros + fallbackBotesMaestros).distinctBy { bote ->
+                    botesMaestros.distinctBy { bote ->
                         listOf(
                             normalizeBoatText(bote.nombre),
                             normalizeBoatText(bote.caleta),
@@ -432,7 +411,7 @@ internal fun ExtractedGestionBotesDialog(
                                                         contentAlignment = Alignment.Center
                                                     ) {
                                                         Text(
-                                                            text = "No se encontraron botes para \"${boatSearchTerm.ifBlank { "tu búsqueda" }}\". Se muestran maestros locales si no llegaron desde la nube.",
+                                                            text = "No se encontraron botes para \"${boatSearchTerm.ifBlank { "tu búsqueda" }}\". Puedes ingresarlo manualmente.",
                                                             color = Color.Gray,
                                                             textAlign = TextAlign.Center
                                                         )
@@ -541,9 +520,7 @@ internal fun ExtractedGestionBotesDialog(
                                 shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(1.5.dp, Color(0xFF003366))
                             ) {
-                                Icon(Icons.Default.Add, null, tint = Color(0xFF003366))
-                                Spacer(Modifier.width(8.dp))
-                                Text("AGREGAR BOTE", fontWeight = FontWeight.Bold, color = Color(0xFF003366))
+                                Text("+ Agregar", fontWeight = FontWeight.Bold, color = Color(0xFF003366))
                             }
 
                             Row(
@@ -586,9 +563,7 @@ internal fun ExtractedGestionBotesDialog(
                                 shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(1.5.dp, Color(0xFF003366))
                             ) {
-                                Icon(Icons.Default.Add, null, tint = Color(0xFF003366))
-                                Spacer(Modifier.width(8.dp))
-                                Text("AGREGAR BOTE", fontWeight = FontWeight.Bold, color = Color(0xFF003366))
+                                Text("+ Agregar", fontWeight = FontWeight.Bold, color = Color(0xFF003366))
                             }
 
                             Spacer(Modifier.weight(1f))

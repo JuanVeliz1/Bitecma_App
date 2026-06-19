@@ -8,16 +8,12 @@ object AppRoutes {
     const val DASHBOARD_PATTERN = "dashboard/{userId}"
     const val OPERACIONES_PATTERN = "operaciones/{userId}"
     const val ESPECIES_PATTERN = "especies/{userId}"
-    const val BOTES_PATTERN = "botes/{userId}"
-    const val ADMIN_PATTERN = "admin/{userId}"
 
     private const val EMPTY_EMAIL_ARG = "_"
 
     fun dashboard(userId: Int) = "dashboard/$userId"
     fun operaciones(userId: Int) = "operaciones/$userId"
     fun especies(userId: Int) = "especies/$userId"
-    fun botes(userId: Int) = "botes/$userId"
-    fun admin(userId: Int) = "admin/$userId"
 
     fun forgotPassword(email: String?): String {
         val normalized = email?.trim().takeUnless { it.isNullOrEmpty() } ?: EMPTY_EMAIL_ARG

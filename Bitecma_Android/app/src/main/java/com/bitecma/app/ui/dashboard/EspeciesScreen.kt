@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -24,8 +25,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import com.bitecma.app.data.DataManager
 import com.bitecma.app.data.EspecieMaestra
 import com.bitecma.app.data.AppState
-import com.bitecma.app.network.RetrofitClient
-import com.bitecma.app.ui.bitecmaAmberBg
 import com.bitecma.app.ui.bitecmaBorder
 import com.bitecma.app.ui.bitecmaCardBackground
 import com.bitecma.app.ui.bitecmaMutedText
@@ -41,28 +40,18 @@ import com.bitecma.app.ui.bitecmaTealContainer
 @Suppress("UNUSED_PARAMETER")
 fun EspeciesScreen(navController: NavController, userId: Int) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     var selectedEspecie by remember { mutableStateOf<EspecieMaestra?>(null) }
+    val dedupeKey: (EspecieMaestra) -> String = { especie ->
+        "${especie.nombreComun.trim().lowercase()}|${especie.nombreCientifico.trim().lowercase()}"
+    }
+    val especiesData by remember {
+        derivedStateOf { DataManager.especies.distinctBy(dedupeKey) }
+    }
 
-    var especiesData by remember { mutableStateOf<List<EspecieMaestra>>(emptyList()) }
-
-    LaunchedEffect(Unit) {
-        especiesData = DataManager.especies
-        if (AppState.forceOffline || AppState.authToken.isNullOrBlank()) return@LaunchedEffect
-        try {
-            val res = RetrofitClient.apiService.getEspecies()
-            if (res.isSuccessful && res.body()?.ok == true) {
-                val items = res.body()?.data ?: emptyList()
-                especiesData = items.map { e ->
-                    EspecieMaestra(
-                        id = e.id,
-                        nombreComun = e.com,
-                        nombreCientifico = e.sci ?: ""
-                    )
-                }
-            }
-        } catch (_: Exception) {
-        }
+    LaunchedEffect(context) {
+        runCatching { DataManager.refreshCatalogs(context) }
     }
     
     val especies = especiesData.filter { 
@@ -71,20 +60,20 @@ fun EspeciesScreen(navController: NavController, userId: Int) {
     }
 
     val accessMessage = when {
-        AppState.isGuestMode -> "Modo sin cuenta: consultando especies guardadas en el dispositivo."
-        AppState.forceOffline || AppState.authToken.isNullOrBlank() -> "Sin sesion online: mostrando catalogo local."
-        else -> "Catalogo de especies listo para consulta."
+        AppState.hasAuthenticatedSession() && AppState.hasNetwork -> "Catalogo de especies sincronizado con la base."
+        AppState.hasAuthenticatedSession() -> "Sin red: mostrando el ultimo catalogo de especies guardado."
+        else -> "Debes iniciar sesion con internet para sincronizar especies."
     }
 
     val accessContainerColor = when {
-        AppState.isGuestMode -> colors.bitecmaAmberBg
-        AppState.forceOffline || AppState.authToken.isNullOrBlank() -> colors.bitecmaSoftBackgroundAlt
+        AppState.hasAuthenticatedSession() && AppState.hasNetwork -> colors.bitecmaTealContainer
+        AppState.hasAuthenticatedSession() -> colors.bitecmaSoftBackgroundAlt
         else -> colors.bitecmaTealContainer
     }
 
     val accessContentColor = when {
-        AppState.isGuestMode -> colors.bitecmaNavy
-        AppState.forceOffline || AppState.authToken.isNullOrBlank() -> colors.bitecmaSubtleText
+        AppState.hasAuthenticatedSession() && AppState.hasNetwork -> colors.bitecmaTeal
+        AppState.hasAuthenticatedSession() -> colors.bitecmaSubtleText
         else -> colors.bitecmaTeal
     }
 
