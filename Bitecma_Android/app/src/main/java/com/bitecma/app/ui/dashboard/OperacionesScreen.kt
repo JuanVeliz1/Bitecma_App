@@ -243,8 +243,10 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     val ctx = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val operacionesListState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
     var isLoading by remember { mutableStateOf(true) }
     var isSyncingAll by remember { mutableStateOf(false) }
+    var isDeletingOperacion by remember { mutableStateOf(false) }
     var expandedOpId by remember { mutableStateOf<String?>(null) }
     var lastExpandClickAt by remember { mutableLongStateOf(0L) }
     var showOperacionDetalleDialog by remember { mutableStateOf(false) }
@@ -793,27 +795,79 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
 
     pendingDeleteOperacion?.let { itemToDelete ->
         AlertDialog(
-            onDismissRequest = { pendingDeleteOperacion = null },
-            title = { Text("Confirmar eliminación") },
+            onDismissRequest = {
+                if (!isDeletingOperacion) {
+                    pendingDeleteOperacion = null
+                }
+            },
+            title = { Text("Eliminar operación") },
             text = {
                 Text(
-                    "Vas a eliminar la operación ${itemToDelete.op.id}. Esta acción también puede borrar sus datos en la web y no se puede deshacer."
+                    "Se eliminará la operación ${itemToDelete.op.id} con sus registros asociados. Esta acción no se puede deshacer."
                 )
             },
             confirmButton = {
                 Button(
+                    enabled = !isDeletingOperacion,
                     onClick = {
-                        pendingDeleteOperacion = null
+                        if (itemToDelete.source == OperacionSource.BD && !AppState.isEffectivelyOnline()) {
+                            pendingDeleteOperacion = null
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Para eliminar esta operación necesitas conexión a internet.")
+                            }
+                            return@Button
+                        }
+
+                        isDeletingOperacion = true
                         scope.launch {
-                            DataManager.deleteOperacion(ctx, itemToDelete.op.id, itemToDelete.source)
+                            val ok = runCatching {
+                                DataManager.deleteOperacion(ctx, itemToDelete.op.id, itemToDelete.source)
+                            }.getOrDefault(false)
+
+                            isDeletingOperacion = false
+                            pendingDeleteOperacion = null
+
+                            if (ok) {
+                                if (expandedOpId == itemToDelete.op.id) {
+                                    expandedOpId = null
+                                }
+                                if (currentOperacionDetalle?.id == itemToDelete.op.id) {
+                                    showOperacionDetalleDialog = false
+                                    currentOperacionDetalle = null
+                                    currentOperacionDetalleBoteKey = null
+                                }
+                                if (currentOpForBotes?.id == itemToDelete.op.id) {
+                                    currentOpForBotes = null
+                                }
+                                snackbarHostState.showSnackbar("Operación eliminada.")
+                            } else {
+                                snackbarHostState.showSnackbar("No se pudo eliminar la operación. Revisa tu conexión e inténtalo nuevamente.")
+                            }
                         }
                     }
                 ) {
-                    Text("Eliminar")
+                    if (isDeletingOperacion) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Text("Eliminando...")
+                        }
+                    } else {
+                        Text("Eliminar")
+                    }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDeleteOperacion = null }) {
+                TextButton(
+                    enabled = !isDeletingOperacion,
+                    onClick = { pendingDeleteOperacion = null }
+                ) {
                     Text("Cancelar")
                 }
             }
@@ -821,6 +875,9 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
     }
 
     Scaffold(
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState)
+        },
         topBar = {
             TopAppBar(
                 title = { Text("Operaciones", color = Color.White) },

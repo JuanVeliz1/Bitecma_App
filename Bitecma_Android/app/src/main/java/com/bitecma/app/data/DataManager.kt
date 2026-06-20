@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.bitecma.app.data.local.LocalCacheDatabase
 import com.bitecma.app.data.local.LocalCacheSnapshot
 import com.bitecma.app.data.local.LocalCacheStore
@@ -199,10 +200,8 @@ object DataManager {
     }
 
     private fun applySnapshot(snapshot: LocalCacheSnapshot) {
-        operacionesBd.clear()
-        operacionesBd.addAll(snapshot.operacionesBd)
-        operacionesLc.clear()
-        operacionesLc.addAll(snapshot.operacionesLc)
+        replaceOperacionStateList(operacionesBd, snapshot.operacionesBd)
+        replaceOperacionStateList(operacionesLc, snapshot.operacionesLc)
         dirtyOperacionIds.clear()
         dirtyOperacionIds.addAll(snapshot.dirtyOperacionIds.distinct())
         estadosSyncOperacion.clear()
@@ -338,9 +337,6 @@ object DataManager {
         val snapshot = buildSnapshot()
         val payload = snapshot.toLegacyPayload()
         val appCtx = context.applicationContext
-        // Schedule background sync immediately so pending operations are not stranded
-        // if the process dies before the debounced persistence job finishes.
-        reconcileBackgroundSync(appCtx)
         persistJob?.cancel()
         persistJob = ioScope.launch {
             delay(250)
@@ -807,12 +803,10 @@ object DataManager {
         }
 
         if (operacionesBd.toList() != nextBd) {
-            operacionesBd.clear()
-            operacionesBd.addAll(nextBd)
+            replaceOperacionStateList(operacionesBd, nextBd)
         }
         if (operacionesLc.toList() != nextLc) {
-            operacionesLc.clear()
-            operacionesLc.addAll(nextLc)
+            replaceOperacionStateList(operacionesLc, nextLc)
         }
     }
 
@@ -824,22 +818,37 @@ object DataManager {
             .groupBy { it.id }
             .mapValues { (_, ops) -> ops.reduce { acc, op -> mergeOperationSnapshots(acc, op) } }
         val serverIds = serverOps.map { it.id }.toSet()
-        operacionesBd.clear()
-        operacionesBd.addAll(serverOps.map { op ->
+        val nextBd = serverOps.map { op ->
             val local = localById[op.id]
             when {
                 dirtySet.contains(op.id) -> local ?: op
                 local != null -> mergeOperacionPreservingData(local, op)
                 else -> op
             }
-        })
-        operacionesBd.addAll(
-            currentBdOrder.mapNotNull { id ->
-                localById[id]?.takeIf { id !in serverIds && id in dirtySet }
-            },
-        )
+        } + currentBdOrder.mapNotNull { id ->
+            localById[id]?.takeIf { id !in serverIds && id in dirtySet }
+        }
+        replaceOperacionStateList(operacionesBd, nextBd)
         operacionesLc.removeAll { it.id in serverIds }
         normalizeSyncStates()
+    }
+
+    private fun replaceOperacionStateList(
+        target: SnapshotStateList<OperacionDto>,
+        next: List<OperacionDto>,
+    ) {
+        val shared = minOf(target.size, next.size)
+        for (index in 0 until shared) {
+            if (target[index] != next[index]) {
+                target[index] = next[index]
+            }
+        }
+        while (target.size > next.size) {
+            target.removeAt(target.lastIndex)
+        }
+        if (next.size > target.size) {
+            target.addAll(next.subList(target.size, next.size))
+        }
     }
 
     private suspend fun fetchRemoteOperations(): List<OperacionDto>? {
