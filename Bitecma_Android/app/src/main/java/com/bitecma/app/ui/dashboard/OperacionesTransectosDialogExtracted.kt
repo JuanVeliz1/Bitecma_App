@@ -188,7 +188,7 @@ internal fun ExtractedTransectosDialog(
                                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("Cantidad", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                            Text("Cantidad", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                             BasicTextField(
                                                 value = quadrantCountText,
                                                 onValueChange = { quadrantCountText = it.filter { ch -> ch.isDigit() } },
@@ -204,7 +204,7 @@ internal fun ExtractedTransectosDialog(
                                             )
                                         }
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("Area cuadrante", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                            Text("Area cuadrante", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                             Box {
                                                 var expandedArea by remember { mutableStateOf(false) }
                                                 OutlinedButton(
@@ -232,7 +232,7 @@ internal fun ExtractedTransectosDialog(
 
                                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("Tipo sustrato", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                            Text("Tipo sustrato", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                             BasicTextField(
                                                 value = quadrantSustrato,
                                                 onValueChange = { quadrantSustrato = it },
@@ -247,7 +247,7 @@ internal fun ExtractedTransectosDialog(
                                             )
                                         }
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("Especie", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                            Text("Especie", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                             OutlinedButton(
                                                 onClick = { showQuadrantSpeciesPicker = true },
                                                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -359,12 +359,12 @@ internal fun ExtractedTransectosDialog(
                                                             },
                                                             modifier = Modifier.size(28.dp)
                                                         ) {
-                                                            Icon(Icons.Default.Delete, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                                            Icon(Icons.Default.Delete, null, tint = colors.onSurface, modifier = Modifier.size(18.dp))
                                                         }
                                                     }
                                                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            Text("Cantidad", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                                            Text("Cantidad", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                                             BasicTextField(
                                                                 value = extractedCountInputText(countValue),
                                                                 onValueChange = { value ->
@@ -402,7 +402,7 @@ internal fun ExtractedTransectosDialog(
                                                             )
                                                         }
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            Text("Densidad", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                                            Text("Densidad", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                                             Surface(
                                                                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                                                                 color = colors.surfaceVariant,
@@ -416,7 +416,7 @@ internal fun ExtractedTransectosDialog(
                                                     }
                                                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            Text("Area", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                                            Text("Area", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                                             BasicTextField(
                                                                 value = (q.area ?: 0.25).toString(),
                                                                 onValueChange = { value ->
@@ -435,7 +435,7 @@ internal fun ExtractedTransectosDialog(
                                                             )
                                                         }
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            Text("Sustrato", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                                            Text("Sustrato", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                                             BasicTextField(
                                                                 value = q.sustrato.orEmpty(),
                                                                 onValueChange = { value ->
@@ -610,7 +610,7 @@ internal fun ExtractedTransectosDialog(
                                                         modifier = Modifier.weight(1f)
                                                     )
                                                     IconButton(onClick = { transectosList.removeAt(index) }, modifier = Modifier.size(28.dp)) {
-                                                        Icon(Icons.Default.Delete, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                                        Icon(Icons.Default.Delete, null, tint = colors.onSurface, modifier = Modifier.size(18.dp))
                                                     }
                                                 }
 
@@ -637,7 +637,7 @@ internal fun ExtractedTransectosDialog(
                                                     Text(
                                                         "Detalles del transecto",
                                                         fontSize = 11.sp,
-                                                        color = colors.onSurfaceVariant,
+                                                        color = colors.onSurface,
                                                         fontWeight = FontWeight.Medium
                                                     )
                                                 }
@@ -646,7 +646,7 @@ internal fun ExtractedTransectosDialog(
 
                                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                                     Column(modifier = Modifier.weight(1f)) {
-                                                        Text("Area (m2)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                                        Text("Area (m2)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                                         BasicTextField(
                                                             value = (t.area ?: 120.0).toString(),
                                                             onValueChange = { transectosList[index] = t.copy(area = it.toDoubleOrNull()) },
@@ -669,7 +669,7 @@ internal fun ExtractedTransectosDialog(
                                                         )
                                                     }
                                                     Column(modifier = Modifier.weight(1.4f)) {
-                                                        Text("Sustrato", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                                        Text("Sustrato", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                                         BasicTextField(
                                                             value = t.sustrato.orEmpty(),
                                                             onValueChange = { transectosList[index] = t.copy(sustrato = it) },
@@ -704,7 +704,7 @@ internal fun ExtractedTransectosDialog(
                                                 Spacer(Modifier.height(12.dp))
 
                                                 Column {
-                                                    Text("Cubierta biologica", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                                                    Text("Cubierta biologica", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
                                                     BasicTextField(
                                                         value = t.cubierta.orEmpty(),
                                                         onValueChange = { transectosList[index] = t.copy(cubierta = it) },
@@ -721,7 +721,7 @@ internal fun ExtractedTransectosDialog(
 
                                                 Spacer(Modifier.height(12.dp))
 
-                                                Text("Fauna (filas)", fontSize = 10.sp, fontWeight = FontWeight.Black, color = colors.onSurfaceVariant, letterSpacing = 1.sp)
+                                                Text("Fauna (filas)", fontSize = 10.sp, fontWeight = FontWeight.Black, color = colors.onSurface, letterSpacing = 1.sp)
                                                 Spacer(Modifier.height(8.dp))
 
                                                 val currentCounts = t.counts ?: emptyMap<String, Int>()
@@ -731,9 +731,9 @@ internal fun ExtractedTransectosDialog(
                                                 } else {
                                                     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                                         Spacer(Modifier.weight(1f))
-                                                        Text("N° ind", fontSize = 10.sp, fontWeight = FontWeight.Black, color = colors.onSurfaceVariant, modifier = Modifier.width(88.dp), textAlign = TextAlign.Center)
+                                                        Text("N° ind", fontSize = 10.sp, fontWeight = FontWeight.Black, color = colors.onSurface, modifier = Modifier.width(88.dp), textAlign = TextAlign.Center)
                                                         Spacer(Modifier.width(10.dp))
-                                                        Text("Dens.", fontSize = 10.sp, fontWeight = FontWeight.Black, color = colors.onSurfaceVariant, modifier = Modifier.width(72.dp), textAlign = TextAlign.Center)
+                                                        Text("Dens.", fontSize = 10.sp, fontWeight = FontWeight.Black, color = colors.onSurface, modifier = Modifier.width(72.dp), textAlign = TextAlign.Center)
                                                     }
                                                     densidadSpeciesIds.forEachIndexed { speciesIndex, sid ->
                                                         val esp = especiesMaestras.find { it.id == sid }
@@ -826,7 +826,7 @@ internal fun ExtractedTransectosDialog(
                         shape = RoundedCornerShape(26.dp),
                         border = BorderStroke(1.5.dp, colors.outline)
                     ) {
-                        Text("Cancelar", fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant)
+                        Text("Cancelar", fontWeight = FontWeight.Bold, color = colors.onSurface)
                     }
                     Button(
                         onClick = {

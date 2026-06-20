@@ -229,7 +229,7 @@ internal fun ExtractedGestionBotesDialog(
                                         ) {
                                             Text(
                                                 "No hay botes registrados. Se crean 4 filas por defecto, pero puedes agregar más si la operación lo necesita.",
-                                                color = colors.onSurfaceVariant,
+                                                color = colors.onSurface,
                                                 textAlign = TextAlign.Center
                                             )
                                         }
@@ -379,7 +379,7 @@ internal fun ExtractedGestionBotesDialog(
                                             }
                                         },
                                         fontSize = 11.sp,
-                                        color = colors.onSurfaceVariant
+                                        color = colors.onSurface
                                     )
 
                                     Spacer(modifier = Modifier.height(12.dp))
@@ -403,7 +403,7 @@ internal fun ExtractedGestionBotesDialog(
                                                     ) {
                                                         Text(
                                                             text = "No se encontraron botes para \"${boatSearchTerm.ifBlank { "tu búsqueda" }}\". Puedes ingresarlo manualmente.",
-                                                            color = colors.onSurfaceVariant,
+                                                            color = colors.onSurface,
                                                             textAlign = TextAlign.Center
                                                         )
                                                     }
@@ -439,12 +439,12 @@ internal fun ExtractedGestionBotesDialog(
                                                                     text = masterBoat.nombre.orEmpty(),
                                                                     fontWeight = FontWeight.Bold,
                                                                     fontSize = 14.sp,
-                                                                    color = colors.primary
+                                                                    color = colors.onSurface
                                                                 )
                                                                 Text(
                                                                     text = "RPA ${masterBoat.nrpa.orEmpty()} · Caleta ${masterBoat.caleta.orEmpty()}",
                                                                     fontSize = 12.sp,
-                                                                    color = colors.onSurfaceVariant
+                                                                    color = colors.onSurface
                                                                 )
                                                             }
                                                             Surface(
@@ -527,7 +527,7 @@ internal fun ExtractedGestionBotesDialog(
                                     shape = RoundedCornerShape(26.dp),
                                 border = BorderStroke(1.5.dp, colors.outline)
                                 ) {
-                                Text("Cancelar", fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant, maxLines = 1)
+                                Text("Cancelar", fontWeight = FontWeight.Bold, color = colors.onSurface, maxLines = 1)
                                 }
 
                                 Button(
@@ -567,7 +567,7 @@ internal fun ExtractedGestionBotesDialog(
                                 modifier = Modifier.height(52.dp),
                                 shape = RoundedCornerShape(26.dp),
                                 border = BorderStroke(1.5.dp, colors.outline)
-                            ) { Text("Cancelar", fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant) }
+                            ) { Text("Cancelar", fontWeight = FontWeight.Bold, color = colors.onSurface) }
 
                             Button(
                                 onClick = onSave,

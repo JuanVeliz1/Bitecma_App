@@ -67,7 +67,6 @@ import com.bitecma.app.ui.bitecmaCardBackground
 import com.bitecma.app.ui.bitecmaDangerBg
 import com.bitecma.app.ui.bitecmaMutedText
 import com.bitecma.app.ui.bitecmaNavy
-import com.bitecma.app.ui.bitecmaNavyStrong
 import com.bitecma.app.ui.bitecmaSoftBackground
 import com.bitecma.app.ui.bitecmaSoftBackgroundAlt
 import com.bitecma.app.ui.bitecmaSubtleText
@@ -79,6 +78,9 @@ internal data class OperacionItem(
     val op: OperacionDto,
     val source: OperacionSource
 )
+
+private val BOTE_METRIC_SUCCESS_BG = Color(0xFF0F766E)
+private val BOTE_METRIC_AMBER_BG = Color(0xFFB45309)
 
 internal fun mergeBotesForUi(
     first: List<OperacionBoteDto>,
@@ -371,7 +373,7 @@ internal fun BoteDataResumenDialog(
                     Icon(
                         if (isIntermareal) Icons.Default.DirectionsWalk else Icons.Default.DirectionsBoat,
                         contentDescription = null,
-                        tint = colors.bitecmaNavy,
+                        tint = colors.onSurface,
                         modifier = Modifier.size(28.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -380,12 +382,14 @@ internal fun BoteDataResumenDialog(
                             text = bote.nombre?.uppercase() ?: "BOTE SIN NOMBRE",
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 16.sp,
-                            color = colors.bitecmaNavyStrong
+                            color = colors.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = "Zona ${bote.zona ?: 0} · ${bote.buzo?.uppercase() ?: "SIN BUZO"}",
                             fontSize = 12.sp,
-                            color = colors.bitecmaMutedText
+                            color = colors.onSurfaceVariant
                         )
                     }
                     IconButton(onClick = onDismiss) {
@@ -398,28 +402,28 @@ internal fun BoteDataResumenDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Surface(
                         modifier = Modifier.weight(1f),
-                        color = colors.bitecmaSuccessBg,
+                        color = BOTE_METRIC_SUCCESS_BG,
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         Column(
                             modifier = Modifier.padding(vertical = 12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("$densityUnits", fontWeight = FontWeight.Black, fontSize = 18.sp, color = colors.bitecmaTeal)
-                            Text(densTipoPluralLabel(bote.densTipo), fontSize = 10.sp, color = colors.bitecmaTeal)
+                            Text("$densityUnits", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color.White)
+                            Text(densTipoPluralLabel(bote.densTipo), fontSize = 10.sp, color = Color.White)
                         }
                     }
                     Surface(
                         modifier = Modifier.weight(1f),
-                        color = colors.bitecmaAmberBg,
+                        color = BOTE_METRIC_AMBER_BG,
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         Column(
                             modifier = Modifier.padding(vertical = 12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("$lpSamples", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color(0xFFD97706))
-                            Text("Muestras P-L", fontSize = 10.sp, color = Color(0xFFD97706))
+                            Text("$lpSamples", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color.White)
+                            Text("Muestras P-L", fontSize = 10.sp, color = Color.White)
                         }
                     }
                 }
@@ -433,7 +437,7 @@ internal fun BoteDataResumenDialog(
                         "Revisa la informacion registrada o agrega nuevos datos."
                     },
                     fontSize = 12.sp,
-                    color = colors.bitecmaMutedText
+                    color = colors.onSurfaceVariant
                 )
 
                 Spacer(modifier = Modifier.height(18.dp))
@@ -544,7 +548,7 @@ internal fun OperacionCard(
                             append(fFin)
                         }
                     }
-                    Text(subtitulo, fontSize = 12.sp, color = colors.bitecmaSubtleText)
+                    Text(subtitulo, fontSize = 12.sp, color = colors.onSurfaceVariant)
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(color = syncBadge.second, shape = RoundedCornerShape(999.dp)) {
@@ -575,7 +579,7 @@ internal fun OperacionCard(
                     if (canUploadLocal) {
                         IconButton(onClick = onUploadLocalClick) { Icon(Icons.Default.CloudUpload, null, tint = colors.bitecmaTeal) }
                     }
-                    IconButton(onClick = onEditBotesClick) { Icon(Icons.Default.Edit, null, tint = colors.bitecmaSubtleText) }
+                    IconButton(onClick = onEditBotesClick) { Icon(Icons.Default.Edit, null, tint = colors.onSurface) }
                     IconButton(onClick = onDeleteClick) { Icon(Icons.Default.Delete, null, tint = colors.error.copy(alpha = 0.8f)) }
                     IconButton(onClick = onExpandClick) { Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = "Expandir") }
                 }
@@ -586,7 +590,7 @@ internal fun OperacionCard(
 
                 val botesAMostrar = op.botes ?: emptyList()
                 if (botesAMostrar.isEmpty()) {
-                    Text("No hay botes registrados en esta operación.", fontSize = 12.sp, color = colors.bitecmaMutedText, modifier = Modifier.padding(vertical = 8.dp))
+                    Text("No hay botes registrados en esta operación.", fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
                 } else {
                     botesAMostrar.forEach { bote ->
                         BoteItem(bote = bote, onClick = { onEditDataClick(bote) })
@@ -616,35 +620,42 @@ internal fun BoteItem(bote: OperacionBoteDto, onClick: () -> Unit) {
             Icon(
                 if (isIntermareal) Icons.Default.DirectionsWalk else Icons.Default.DirectionsBoat,
                 contentDescription = null,
-                tint = colors.bitecmaNavy,
+                tint = colors.onSurface,
                 modifier = Modifier.size(36.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = bote.nombre?.uppercase() ?: "BOTE SIN NOMBRE", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = colors.bitecmaNavyStrong)
-                Text(text = "Zona ${bote.zona ?: 0} · ${bote.buzo?.uppercase() ?: "SIN BUZO"}", fontSize = 12.sp, color = colors.bitecmaMutedText)
-                Text(text = "Tipo: ${bote.densTipo?.lowercase() ?: "transecto"}", fontSize = 12.sp, color = colors.bitecmaMutedText)
+                Text(
+                    text = bote.nombre?.uppercase() ?: "BOTE SIN NOMBRE",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    color = colors.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(text = "Zona ${bote.zona ?: 0} · ${bote.buzo?.uppercase() ?: "SIN BUZO"}", fontSize = 12.sp, color = colors.onSurfaceVariant)
+                Text(text = "Tipo: ${bote.densTipo?.lowercase() ?: "transecto"}", fontSize = 12.sp, color = colors.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (transectCount > 0) {
-                        Surface(color = colors.bitecmaSuccessBg, shape = RoundedCornerShape(999.dp)) {
+                        Surface(color = BOTE_METRIC_SUCCESS_BG, shape = RoundedCornerShape(999.dp)) {
                             Text(
                                 text = "$transectCount ${if (transectCount == 1) densTipoLabel(bote.densTipo).lowercase() else densTipoPluralLabel(bote.densTipo).lowercase()}",
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = colors.bitecmaTeal
+                                color = Color.White
                             )
                         }
                     }
                     if (lpSampleCount > 0) {
-                        Surface(color = colors.bitecmaAmberBg, shape = RoundedCornerShape(999.dp)) {
+                        Surface(color = BOTE_METRIC_AMBER_BG, shape = RoundedCornerShape(999.dp)) {
                             Text(
                                 text = "$lpSampleCount ${if (lpSampleCount == 1) "muestra L-P" else "muestras L-P"}",
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFD97706)
+                                color = Color.White
                             )
                         }
                     }
@@ -652,12 +663,12 @@ internal fun BoteItem(bote: OperacionBoteDto, onClick: () -> Unit) {
             }
             if (transectCount > 0 || lpSampleCount > 0) {
                 Surface(
-                    color = colors.bitecmaSuccessBg,
+                    color = BOTE_METRIC_SUCCESS_BG,
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "${transectCount + lpSampleCount}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colors.bitecmaTeal)
-                        Text(text = "Registros", fontSize = 8.sp, color = colors.bitecmaTeal)
+                        Text(text = "${transectCount + lpSampleCount}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                        Text(text = "Registros", fontSize = 8.sp, color = Color.White)
                     }
                 }
             }
