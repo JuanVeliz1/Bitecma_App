@@ -34,8 +34,13 @@ internal object DataRemoteSource {
     private suspend fun <T> callEnvelope(
         request: suspend () -> Response<ApiEnvelope<T>>,
     ): RemoteEnvelopeResult<T> {
-        val response = runCatching { request() }.getOrNull()
-            ?: return RemoteEnvelopeResult(ok = false)
+        val responseAttempt = runCatching { request() }
+        val response = responseAttempt.getOrNull()
+            ?: return RemoteEnvelopeResult(
+                ok = false,
+                error = responseAttempt.exceptionOrNull()
+                    ?.let { e -> "${e.javaClass.simpleName}:${e.message.orEmpty()}" },
+            )
         val body = response.body()
         return RemoteEnvelopeResult(
             ok = response.isSuccessful && body?.ok == true,

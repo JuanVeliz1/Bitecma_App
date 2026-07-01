@@ -852,7 +852,11 @@ object DataManager {
     }
 
     private suspend fun fetchRemoteOperations(): List<OperacionDto>? {
-        return extractRemoteData(DataRemoteSource.getOperaciones())
+        val result = DataRemoteSource.getOperaciones()
+        if (!result.ok) {
+            return null
+        }
+        return result.data
     }
 
     private suspend fun fetchRemoteCatalogSnapshot(currentCatalog: CatalogSnapshot = getCatalogSnapshot()): CatalogSnapshot? = coroutineScope {
@@ -1209,7 +1213,6 @@ object DataManager {
             if (!canStartRemoteSync(context)) {
                 return false
             }
-
             val syncOk = performRemoteSyncCycle(context)
             finalizeSyncAttempt(context, syncOk)
             return syncOk

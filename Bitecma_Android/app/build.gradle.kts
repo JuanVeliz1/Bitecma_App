@@ -4,9 +4,19 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+import java.util.Properties
+
 val apiBaseUrl =
     ((project.findProperty("BITECMA_API_BASE_URL") as String?)?.trim()?.removeSuffix("/")
         ?: "https://bitecma.cl/api") + "/"
+
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) {
+        keystorePropsFile.inputStream().use(::load)
+    }
+}
+val hasReleaseKeystore = keystorePropsFile.exists()
 
 android {
     namespace = "com.bitecma.app"
@@ -25,8 +35,22 @@ android {
         }
     }
     buildTypes {
+        if (hasReleaseKeystore) {
+            signingConfigs {
+                create("release") {
+                    storeFile = file(keystoreProps.getProperty("storeFile"))
+                    storePassword = keystoreProps.getProperty("storePassword")
+                    keyAlias = keystoreProps.getProperty("keyAlias")
+                    keyPassword = keystoreProps.getProperty("keyPassword")
+                }
+            }
+        }
+
         release {
             isMinifyEnabled = false
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {

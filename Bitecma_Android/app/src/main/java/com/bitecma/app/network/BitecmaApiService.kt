@@ -2,6 +2,10 @@ package com.bitecma.app.network
 
 import com.bitecma.app.BuildConfig
 import com.bitecma.app.data.AppState
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonDeserializationContext
+import com.google.gson.JsonDeserializer
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -13,6 +17,7 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.PUT
 import retrofit2.http.Query
+import java.lang.reflect.Type
 import java.util.concurrent.TimeUnit
 
 data class ApiEnvelope<T>(
@@ -286,6 +291,30 @@ data class UploadTextFileRequest(
     val text: String
 )
 
+private class SafeIntDeserializer : JsonDeserializer<Int?> {
+    override fun deserialize(json: JsonElement?, typeOfT: Type?, context: JsonDeserializationContext?): Int? {
+        if (json == null || json.isJsonNull) return null
+        val primitive = json.asJsonPrimitive ?: return null
+        return when {
+            primitive.isNumber -> runCatching { primitive.asInt }.getOrNull()
+            primitive.isString -> primitive.asString.trim().toIntOrNull()
+            else -> null
+        }
+    }
+}
+
+private class SafeDoubleDeserializer : JsonDeserializer<Double?> {
+    override fun deserialize(json: JsonElement?, typeOfT: Type?, context: JsonDeserializationContext?): Double? {
+        if (json == null || json.isJsonNull) return null
+        val primitive = json.asJsonPrimitive ?: return null
+        return when {
+            primitive.isNumber -> runCatching { primitive.asDouble }.getOrNull()
+            primitive.isString -> primitive.asString.trim().replace(',', '.').toDoubleOrNull()
+            else -> null
+        }
+    }
+}
+
 object RetrofitClient {
     private const val DEFAULT_TIMEOUT_SECONDS = 20L
 
@@ -313,10 +342,15 @@ object RetrofitClient {
             .retryOnConnectionFailure(true)
             .build()
 
+        val gson = GsonBuilder()
+            .registerTypeAdapter(Int::class.javaObjectType, SafeIntDeserializer())
+            .registerTypeAdapter(Double::class.javaObjectType, SafeDoubleDeserializer())
+            .create()
+
         retrofit2.Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL)
             .client(client)
-            .addConverterFactory(retrofit2.converter.gson.GsonConverterFactory.create())
+            .addConverterFactory(retrofit2.converter.gson.GsonConverterFactory.create(gson))
             .build()
             .create(BitecmaApiService::class.java)
     }

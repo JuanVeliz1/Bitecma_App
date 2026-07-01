@@ -380,7 +380,6 @@ fun OperacionesScreen(navController: NavController, userId: Int) {
             isLoading = false
             return@LaunchedEffect
         }
-
         runCatching {
             DataManager.syncAllFromServer(ctx)
         }
